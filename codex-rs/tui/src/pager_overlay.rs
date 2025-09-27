@@ -350,6 +350,20 @@ impl PagerView {
         }
 
         match key_event {
+            // ESC exits commit mode (but keeps overlay open)
+            KeyEvent {
+                code: KeyCode::Esc,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                if self.commit_mode {
+                    self.commit_mode = false;
+                    self.commit_cursor_line = None;
+                    tui.frame_requester()
+                        .schedule_frame_in(Duration::from_millis(16));
+                    return Ok(());
+                }
+            }
             // Toggle commit-navigation mode on Enter (when not in search input)
             KeyEvent {
                 code: KeyCode::Enter,
@@ -818,38 +832,59 @@ impl PagerView {
         if !self.commit_mode {
             return;
         }
-        let Some(cache) = &self.wrap_cache else { return; };
         if self.commit_cursor_line.is_none() {
             self.enter_commit_mode(viewport_width, viewport_height);
         }
-        let Some(mut line) = self.commit_cursor_line else { return; };
+        let Some(mut line) = self.commit_cursor_line else {
+            return;
+        };
         let mut col = self.commit_cursor_col;
         let step: i32 = if dir >= 0 { 1 } else { -1 };
-        let mut i = line as i64 + step as i64;
-        let limit_low: i64 = 0;
-        let limit_high: i64 = cache.wrapped_plain.len() as i64 - 1;
+        // perform scanning in a limited-scope borrow to avoid conflicts with later &mut self calls
+        let (mut i, limit_low, limit_high) = {
+            let cache = match &self.wrap_cache { Some(c) => c, None => return };
+            (line as i64 + step as i64, 0i64, cache.wrapped_plain.len() as i64 - 1)
+        };
         let mut advanced = false;
         while i >= limit_low && i <= limit_high {
             let li = i as usize;
             // Adjust col based on glyph at this line
-            if let Some(ch) = Self::char_at_cell(&cache.wrapped_plain[li], col) {
+            let ch_here = {
+                let cache = match &self.wrap_cache { Some(c) => c, None => return };
+                Self::char_at_cell(&cache.wrapped_plain[li], col)
+            };
+            if let Some(ch) = ch_here {
                 match ch {
                     '╱' => {
-                        if dir > 0 { col = col.saturating_add(1); } else { col = col.saturating_sub(1); }
+                        if dir > 0 {
+                            col = col.saturating_add(1);
+                        } else {
+                            col = col.saturating_sub(1);
+                        }
                     }
                     '╲' => {
-                        if dir > 0 { col = col.saturating_sub(1); } else { col = col.saturating_add(1); }
+                        if dir > 0 {
+                            col = col.saturating_sub(1);
+                        } else {
+                            col = col.saturating_add(1);
+                        }
                     }
                     _ => {}
                 }
             }
             // If this line has a commit at current col, stop
-            if let Some(cols) = cache.commit_cols.get(li) {
-                if cols.iter().any(|&c| c == col) {
-                    line = li;
-                    advanced = true;
-                    break;
-                }
+            let has_commit_here = {
+                let cache = match &self.wrap_cache { Some(c) => c, None => return };
+                cache
+                    .commit_cols
+                    .get(li)
+                    .map(|cols| cols.iter().any(|&c| c == col))
+                    .unwrap_or(false)
+            };
+            if has_commit_here {
+                line = li;
+                advanced = true;
+                break;
             }
             i += step as i64;
         }
@@ -859,7 +894,12 @@ impl PagerView {
             self.ensure_commit_visible(viewport_width, viewport_height);
         } else {
             // fallback to nearest logic if not found
-            self.move_to_nearby_commit(if dir > 0 { 1 } else { -1 }, 0, viewport_width, viewport_height);
+            self.move_to_nearby_commit(
+                if dir > 0 { 1 } else { -1 },
+                0,
+                viewport_width,
+                viewport_height,
+            );
         }
     }
 
@@ -869,8 +909,12 @@ impl PagerView {
         let mut col = 0usize;
         for ch in s.chars() {
             let w = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
-            if col == target { return Some(ch); }
-            if target < col + w { return Some(ch); }
+            if col == target {
+                return Some(ch);
+            }
+            if target < col + w {
+                return Some(ch);
+            }
             col += w;
         }
         None
