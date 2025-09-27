@@ -1,41 +1,31 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::codex_message_processor::CodexMessageProcessor;
-use crate::codex_tool_config::CodexToolCallParam;
-use crate::codex_tool_config::CodexToolCallReplyParam;
-use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
-use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
-use crate::error_code::INVALID_REQUEST_ERROR_CODE;
-use crate::outgoing_message::OutgoingMessageSender;
-use codex_protocol::mcp_protocol::ClientRequest;
-use codex_protocol::mcp_protocol::ConversationId;
+use crate::{
+    codex_message_processor::CodexMessageProcessor,
+    codex_tool_config::{
+        CodexToolCallParam, CodexToolCallReplyParam, create_tool_for_codex_tool_call_param,
+        create_tool_for_codex_tool_call_reply_param,
+    },
+    error_code::INVALID_REQUEST_ERROR_CODE,
+    outgoing_message::OutgoingMessageSender,
+};
+use codex_protocol::mcp_protocol::{ClientRequest, ConversationId};
 
-use codex_core::AuthManager;
-use codex_core::ConversationManager;
-use codex_core::config::Config;
-use codex_core::default_client::USER_AGENT_SUFFIX;
-use codex_core::default_client::get_codex_user_agent;
-use codex_core::protocol::Submission;
-use mcp_types::CallToolRequestParams;
-use mcp_types::CallToolResult;
-use mcp_types::ClientRequest as McpClientRequest;
-use mcp_types::ContentBlock;
-use mcp_types::JSONRPCError;
-use mcp_types::JSONRPCErrorError;
-use mcp_types::JSONRPCNotification;
-use mcp_types::JSONRPCRequest;
-use mcp_types::JSONRPCResponse;
-use mcp_types::ListToolsResult;
-use mcp_types::ModelContextProtocolRequest;
-use mcp_types::RequestId;
-use mcp_types::ServerCapabilitiesTools;
-use mcp_types::ServerNotification;
-use mcp_types::TextContent;
+use codex_core::{
+    AuthManager, ConversationManager,
+    config::Config,
+    default_client::{USER_AGENT_SUFFIX, get_codex_user_agent},
+    protocol::Submission,
+};
+use mcp_types::{
+    CallToolRequestParams, CallToolResult, ClientRequest as McpClientRequest, ContentBlock,
+    JSONRPCError, JSONRPCErrorError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
+    ListToolsResult, ModelContextProtocolRequest, RequestId, ServerCapabilitiesTools,
+    ServerNotification, TextContent,
+};
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::task;
+use tokio::{sync::Mutex, task};
 
 pub(crate) struct MessageProcessor {
     codex_message_processor: CodexMessageProcessor,

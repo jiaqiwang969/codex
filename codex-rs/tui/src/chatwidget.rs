@@ -1,116 +1,80 @@
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, VecDeque},
+    path::PathBuf,
+    sync::Arc,
+};
 
-use codex_core::config::Config;
-use codex_core::config_types::Notifications;
-use codex_core::git_info::current_branch_name;
-use codex_core::git_info::local_git_branches;
-use codex_core::protocol::AgentMessageDeltaEvent;
-use codex_core::protocol::AgentMessageEvent;
-use codex_core::protocol::AgentReasoningDeltaEvent;
-use codex_core::protocol::AgentReasoningEvent;
-use codex_core::protocol::AgentReasoningRawContentDeltaEvent;
-use codex_core::protocol::AgentReasoningRawContentEvent;
-use codex_core::protocol::ApplyPatchApprovalRequestEvent;
-use codex_core::protocol::BackgroundEventEvent;
-use codex_core::protocol::ErrorEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecApprovalRequestEvent;
-use codex_core::protocol::ExecCommandBeginEvent;
-use codex_core::protocol::ExecCommandEndEvent;
-use codex_core::protocol::ExitedReviewModeEvent;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::InputMessageKind;
-use codex_core::protocol::ListCustomPromptsResponseEvent;
-use codex_core::protocol::McpListToolsResponseEvent;
-use codex_core::protocol::McpToolCallBeginEvent;
-use codex_core::protocol::McpToolCallEndEvent;
-use codex_core::protocol::Op;
-use codex_core::protocol::PatchApplyBeginEvent;
-use codex_core::protocol::RateLimitSnapshot;
-use codex_core::protocol::ReviewRequest;
-use codex_core::protocol::StreamErrorEvent;
-use codex_core::protocol::TaskCompleteEvent;
-use codex_core::protocol::TokenUsage;
-use codex_core::protocol::TokenUsageInfo;
-use codex_core::protocol::TurnAbortReason;
-use codex_core::protocol::TurnDiffEvent;
-use codex_core::protocol::UserMessageEvent;
-use codex_core::protocol::WebSearchBeginEvent;
-use codex_core::protocol::WebSearchEndEvent;
-use codex_protocol::mcp_protocol::ConversationId;
-use codex_protocol::parse_command::ParsedCommand;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use crossterm::event::KeyModifiers;
+use codex_core::{
+    config::Config,
+    config_types::Notifications,
+    git_info::{current_branch_name, local_git_branches},
+    protocol::{
+        AgentMessageDeltaEvent, AgentMessageEvent, AgentReasoningDeltaEvent, AgentReasoningEvent,
+        AgentReasoningRawContentDeltaEvent, AgentReasoningRawContentEvent,
+        ApplyPatchApprovalRequestEvent, BackgroundEventEvent, ErrorEvent, Event, EventMsg,
+        ExecApprovalRequestEvent, ExecCommandBeginEvent, ExecCommandEndEvent,
+        ExitedReviewModeEvent, InputItem, InputMessageKind, ListCustomPromptsResponseEvent,
+        McpListToolsResponseEvent, McpToolCallBeginEvent, McpToolCallEndEvent, Op,
+        PatchApplyBeginEvent, RateLimitSnapshot, ReviewRequest, StreamErrorEvent,
+        TaskCompleteEvent, TokenUsage, TokenUsageInfo, TurnAbortReason, TurnDiffEvent,
+        UserMessageEvent, WebSearchBeginEvent, WebSearchEndEvent,
+    },
+};
+use codex_protocol::{mcp_protocol::ConversationId, parse_command::ParsedCommand};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use rand::Rng;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
-use ratatui::layout::Rect;
-use ratatui::widgets::Widget;
-use ratatui::widgets::WidgetRef;
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    widgets::{Widget, WidgetRef},
+};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::debug;
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::ApprovalRequest;
-use crate::bottom_pane::BottomPane;
-use crate::bottom_pane::BottomPaneParams;
-use crate::bottom_pane::CancellationEvent;
-use crate::bottom_pane::InputResult;
-use crate::bottom_pane::SelectionAction;
-use crate::bottom_pane::SelectionItem;
-use crate::bottom_pane::SelectionViewParams;
-use crate::bottom_pane::custom_prompt_view::CustomPromptView;
-use crate::bottom_pane::popup_consts::STANDARD_POPUP_HINT_LINE;
-use crate::clipboard_paste::paste_image_to_temp_png;
-use crate::diff_render::display_path_for;
-use crate::exec_cell::CommandOutput;
-use crate::exec_cell::ExecCell;
-use crate::exec_cell::new_active_exec_command;
-use crate::get_git_diff::get_git_diff;
-use crate::history_cell;
-use crate::history_cell::AgentMessageCell;
-use crate::history_cell::HistoryCell;
-use crate::history_cell::McpToolCallCell;
-use crate::history_cell::PatchEventType;
-use crate::markdown::append_markdown;
-use crate::slash_command::SlashCommand;
-use crate::status::RateLimitSnapshotDisplay;
-use crate::text_formatting::truncate_text;
-use crate::tui::FrameRequester;
+use crate::{
+    app_event::AppEvent,
+    app_event_sender::AppEventSender,
+    bottom_pane::{
+        ApprovalRequest, BottomPane, BottomPaneParams, CancellationEvent, InputResult,
+        SelectionAction, SelectionItem, SelectionViewParams, custom_prompt_view::CustomPromptView,
+        popup_consts::STANDARD_POPUP_HINT_LINE,
+    },
+    clipboard_paste::paste_image_to_temp_png,
+    diff_render::display_path_for,
+    exec_cell::{CommandOutput, ExecCell, new_active_exec_command},
+    get_git_diff::get_git_diff,
+    history_cell,
+    history_cell::{AgentMessageCell, HistoryCell, McpToolCallCell, PatchEventType},
+    markdown::append_markdown,
+    slash_command::SlashCommand,
+    status::RateLimitSnapshotDisplay,
+    text_formatting::truncate_text,
+    tui::FrameRequester,
+};
 mod interrupts;
 use self::interrupts::InterruptManager;
 mod agent;
-use self::agent::spawn_agent;
-use self::agent::spawn_agent_from_existing;
+use self::agent::{spawn_agent, spawn_agent_from_existing};
 mod session_header;
 use self::session_header::SessionHeader;
 use crate::streaming::controller::StreamController;
 use std::path::Path;
 
 use chrono::Local;
-use codex_common::approval_presets::ApprovalPreset;
-use codex_common::approval_presets::builtin_approval_presets;
-use codex_common::model_presets::ModelPreset;
-use codex_common::model_presets::builtin_model_presets;
-use codex_core::AuthManager;
-use codex_core::ConversationManager;
-use codex_core::protocol::AskForApproval;
-use codex_core::protocol::SandboxPolicy;
-use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
+use codex_common::{
+    approval_presets::{ApprovalPreset, builtin_approval_presets},
+    model_presets::{ModelPreset, builtin_model_presets},
+};
+use codex_core::{
+    AuthManager, ConversationManager,
+    protocol::{AskForApproval, SandboxPolicy},
+    protocol_config_types::ReasoningEffort as ReasoningEffortConfig,
+};
 use codex_file_search::FileMatch;
-use codex_git_tooling::CreateGhostCommitOptions;
-use codex_git_tooling::GhostCommit;
-use codex_git_tooling::GitToolingError;
-use codex_git_tooling::create_ghost_commit;
-use codex_git_tooling::restore_ghost_commit;
+use codex_git_tooling::{
+    CreateGhostCommitOptions, GhostCommit, GitToolingError, create_ghost_commit,
+    restore_ghost_commit,
+};
 
 const MAX_TRACKED_GHOST_COMMITS: usize = 20;
 
@@ -1140,8 +1104,7 @@ impl ChatWidget {
                 use codex_core::protocol::EventMsg;
                 use std::collections::HashMap;
 
-                use codex_core::protocol::ApplyPatchApprovalRequestEvent;
-                use codex_core::protocol::FileChange;
+                use codex_core::protocol::{ApplyPatchApprovalRequestEvent, FileChange};
 
                 self.app_event_tx.send(AppEvent::CodexEvent(Event {
                     id: "1".to_string(),

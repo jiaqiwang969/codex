@@ -1,23 +1,21 @@
 //! A live status indicator that shows the *latest* log line emitted by the
 //! application while the agent is processing a long‑running task.
 
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use codex_core::protocol::Op;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    text::Line,
+    widgets::{Paragraph, WidgetRef},
+};
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::key_hint;
-use crate::shimmer::shimmer_spans;
-use crate::tui::FrameRequester;
-use crate::ui_consts::LIVE_PREFIX_COLS;
+use crate::{
+    app_event::AppEvent, app_event_sender::AppEventSender, key_hint, shimmer::shimmer_spans,
+    tui::FrameRequester, ui_consts::LIVE_PREFIX_COLS,
+};
 
 pub(crate) struct StatusIndicatorWidget {
     /// Animated header text (defaults to "Working").
@@ -201,12 +199,9 @@ impl WidgetRef for StatusIndicatorWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_event::AppEvent;
-    use crate::app_event_sender::AppEventSender;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    use std::time::Duration;
-    use std::time::Instant;
+    use crate::{app_event::AppEvent, app_event_sender::AppEventSender};
+    use ratatui::{Terminal, backend::TestBackend};
+    use std::time::{Duration, Instant};
     use tokio::sync::mpsc::unbounded_channel;
 
     use pretty_assertions::assert_eq;

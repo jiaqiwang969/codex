@@ -1,12 +1,14 @@
-use std::convert::TryFrom;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    convert::TryFrom,
+    time::{Duration, Instant},
+};
 
 use rand::Rng as _;
 
-use crate::frames::ALL_VARIANTS;
-use crate::frames::FRAME_TICK_DEFAULT;
-use crate::tui::FrameRequester;
+use crate::{
+    frames::{ALL_VARIANTS, FRAME_TICK_DEFAULT},
+    tui::FrameRequester,
+};
 
 /// Drives ASCII art animations shared across popups and onboarding widgets.
 pub(crate) struct AsciiAnimation {

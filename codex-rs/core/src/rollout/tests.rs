@@ -1,22 +1,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::fs::File;
-use std::fs::{self};
-use std::io::Write;
-use std::path::Path;
+use std::{
+    fs::{
+        File, {self},
+    },
+    io::Write,
+    path::Path,
+};
 
 use tempfile::TempDir;
-use time::OffsetDateTime;
-use time::PrimitiveDateTime;
-use time::format_description::FormatItem;
-use time::macros::format_description;
+use time::{
+    OffsetDateTime, PrimitiveDateTime, format_description::FormatItem, macros::format_description,
+};
 use uuid::Uuid;
 
-use crate::rollout::list::ConversationItem;
-use crate::rollout::list::ConversationsPage;
-use crate::rollout::list::Cursor;
-use crate::rollout::list::get_conversation;
-use crate::rollout::list::get_conversations;
+use crate::rollout::list::{
+    ConversationItem, ConversationsPage, Cursor, get_conversation, get_conversations,
+};
 
 fn write_session_file(
     root: &Path,

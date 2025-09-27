@@ -176,8 +176,7 @@ pub fn discover_project_doc_paths(config: &Config) -> std::io::Result<Vec<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ConfigOverrides;
-    use crate::config::ConfigToml;
+    use crate::config::{ConfigOverrides, ConfigToml};
     use std::fs;
     use tempfile::TempDir;
 

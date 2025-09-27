@@ -1,5 +1,4 @@
-use unicode_width::UnicodeWidthChar;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// A single visual row produced by RowBuilder.
 #[derive(Debug, Clone, PartialEq, Eq)]

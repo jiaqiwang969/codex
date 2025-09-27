@@ -1,7 +1,6 @@
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::app_event::AppEvent;
-use crate::session_log;
+use crate::{app_event::AppEvent, session_log};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppEventSender {

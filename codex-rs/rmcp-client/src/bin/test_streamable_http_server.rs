@@ -1,23 +1,18 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::io::ErrorKind;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{borrow::Cow, collections::HashMap, io::ErrorKind, net::SocketAddr, sync::Arc};
 
 use axum::Router;
-use rmcp::ErrorData as McpError;
-use rmcp::handler::server::ServerHandler;
-use rmcp::model::CallToolRequestParam;
-use rmcp::model::CallToolResult;
-use rmcp::model::JsonObject;
-use rmcp::model::ListToolsResult;
-use rmcp::model::PaginatedRequestParam;
-use rmcp::model::ServerCapabilities;
-use rmcp::model::ServerInfo;
-use rmcp::model::Tool;
-use rmcp::transport::StreamableHttpServerConfig;
-use rmcp::transport::StreamableHttpService;
-use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::{
+    ErrorData as McpError,
+    handler::server::ServerHandler,
+    model::{
+        CallToolRequestParam, CallToolResult, JsonObject, ListToolsResult, PaginatedRequestParam,
+        ServerCapabilities, ServerInfo, Tool,
+    },
+    transport::{
+        StreamableHttpServerConfig, StreamableHttpService,
+        streamable_http_server::session::local::LocalSessionManager,
+    },
+};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::task;

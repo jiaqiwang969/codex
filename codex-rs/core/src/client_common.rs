@@ -1,21 +1,26 @@
-use crate::error::Result;
-use crate::model_family::ModelFamily;
-use crate::openai_tools::OpenAiTool;
-use crate::protocol::RateLimitSnapshot;
-use crate::protocol::TokenUsage;
+use crate::{
+    error::Result,
+    model_family::ModelFamily,
+    openai_tools::OpenAiTool,
+    protocol::{RateLimitSnapshot, TokenUsage},
+};
 use codex_apply_patch::APPLY_PATCH_TOOL_INSTRUCTIONS;
-use codex_protocol::config_types::ReasoningEffort as ReasoningEffortConfig;
-use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use codex_protocol::config_types::Verbosity as VerbosityConfig;
-use codex_protocol::models::ResponseItem;
+use codex_protocol::{
+    config_types::{
+        ReasoningEffort as ReasoningEffortConfig, ReasoningSummary as ReasoningSummaryConfig,
+        Verbosity as VerbosityConfig,
+    },
+    models::ResponseItem,
+};
 use futures::Stream;
 use serde::Serialize;
 use serde_json::Value;
-use std::borrow::Cow;
-use std::ops::Deref;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
+use std::{
+    borrow::Cow,
+    ops::Deref,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tokio::sync::mpsc;
 
 /// Review thread system prompt. Edit `core/src/review_prompt.md` to customize.

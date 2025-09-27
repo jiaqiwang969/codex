@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use codex_protocol::models::ResponseItem;
 
-use crate::conversation_history::ConversationHistory;
-use crate::protocol::RateLimitSnapshot;
-use crate::protocol::TokenUsage;
-use crate::protocol::TokenUsageInfo;
+use crate::{
+    conversation_history::ConversationHistory,
+    protocol::{RateLimitSnapshot, TokenUsage, TokenUsageInfo},
+};
 
 /// Persistent, session-scoped state previously stored directly on `Session`.
 #[derive(Default)]

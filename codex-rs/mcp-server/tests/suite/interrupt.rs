@@ -4,23 +4,18 @@
 use std::path::Path;
 
 use codex_core::protocol::TurnAbortReason;
-use codex_protocol::mcp_protocol::AddConversationListenerParams;
-use codex_protocol::mcp_protocol::InterruptConversationParams;
-use codex_protocol::mcp_protocol::InterruptConversationResponse;
-use codex_protocol::mcp_protocol::NewConversationParams;
-use codex_protocol::mcp_protocol::NewConversationResponse;
-use codex_protocol::mcp_protocol::SendUserMessageParams;
-use codex_protocol::mcp_protocol::SendUserMessageResponse;
+use codex_protocol::mcp_protocol::{
+    AddConversationListenerParams, InterruptConversationParams, InterruptConversationResponse,
+    NewConversationParams, NewConversationResponse, SendUserMessageParams, SendUserMessageResponse,
+};
 use core_test_support::skip_if_no_network;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use mcp_types::{JSONRPCResponse, RequestId};
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-use mcp_test_support::McpProcess;
-use mcp_test_support::create_mock_chat_completions_server;
-use mcp_test_support::create_shell_sse_response;
-use mcp_test_support::to_response;
+use mcp_test_support::{
+    McpProcess, create_mock_chat_completions_server, create_shell_sse_response, to_response,
+};
 
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 

@@ -3,14 +3,16 @@
 //! Tests for the macOS sandboxing that are specific to Seatbelt.
 //! Tests that apply to both Mac and Linux sandboxing should go in sandbox.rs.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use codex_core::protocol::SandboxPolicy;
-use codex_core::seatbelt::spawn_command_under_seatbelt;
-use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
-use codex_core::spawn::StdioPolicy;
+use codex_core::{
+    protocol::SandboxPolicy,
+    seatbelt::spawn_command_under_seatbelt,
+    spawn::{CODEX_SANDBOX_ENV_VAR, StdioPolicy},
+};
 use tempfile::TempDir;
 
 struct TestScenario {

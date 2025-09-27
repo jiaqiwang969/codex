@@ -1,14 +1,15 @@
 //! Readiness flag with token-based authorization and async waiting (Tokio).
 
-use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicI32;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
+    time::Duration,
+};
 
-use tokio::sync::Mutex;
-use tokio::sync::watch;
-use tokio::time;
+use tokio::{
+    sync::{Mutex, watch},
+    time,
+};
 
 /// Opaque subscription token returned by `subscribe()`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -172,10 +173,7 @@ mod errors {
 mod tests {
     use std::sync::Arc;
 
-    use super::Readiness;
-    use super::ReadinessFlag;
-    use super::Token;
-    use super::errors::ReadinessError;
+    use super::{Readiness, ReadinessFlag, Token, errors::ReadinessError};
 
     #[tokio::test]
     async fn subscribe_and_mark_ready_roundtrip() -> Result<(), ReadinessError> {

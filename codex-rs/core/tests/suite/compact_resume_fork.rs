@@ -7,30 +7,22 @@
 //! request payload that Codex would send to the model and assert that the
 //! model-visible history matches the expected sequence of messages.
 
-use super::compact::FIRST_REPLY;
-use super::compact::SUMMARY_TEXT;
-use codex_core::CodexAuth;
-use codex_core::CodexConversation;
-use codex_core::ConversationManager;
-use codex_core::ModelProviderInfo;
-use codex_core::NewConversation;
-use codex_core::built_in_model_providers;
-use codex_core::codex::compact::SUMMARIZATION_PROMPT;
-use codex_core::config::Config;
-use codex_core::protocol::ConversationPathResponseEvent;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::Op;
-use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
-use core_test_support::load_default_config_for_test;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::sse;
-use core_test_support::wait_for_event;
+use super::compact::{FIRST_REPLY, SUMMARY_TEXT};
+use codex_core::{
+    CodexAuth, CodexConversation, ConversationManager, ModelProviderInfo, NewConversation,
+    built_in_model_providers,
+    codex::compact::SUMMARIZATION_PROMPT,
+    config::Config,
+    protocol::{ConversationPathResponseEvent, EventMsg, InputItem, Op},
+    spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR,
+};
+use core_test_support::{
+    load_default_config_for_test,
+    responses::{ev_assistant_message, ev_completed, mount_sse_once, sse},
+    wait_for_event,
+};
 use pretty_assertions::assert_eq;
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tempfile::TempDir;
 use wiremock::MockServer;

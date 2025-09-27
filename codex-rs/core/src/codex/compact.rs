@@ -1,28 +1,22 @@
 use std::sync::Arc;
 
-use super::Session;
-use super::TurnContext;
-use super::get_last_assistant_message_from_turn;
-use crate::Prompt;
-use crate::client_common::ResponseEvent;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
-use crate::protocol::AgentMessageEvent;
-use crate::protocol::CompactedItem;
-use crate::protocol::ErrorEvent;
-use crate::protocol::Event;
-use crate::protocol::EventMsg;
-use crate::protocol::InputItem;
-use crate::protocol::InputMessageKind;
-use crate::protocol::TaskStartedEvent;
-use crate::protocol::TurnContextItem;
-use crate::truncate::truncate_middle;
-use crate::util::backoff;
+use super::{Session, TurnContext, get_last_assistant_message_from_turn};
+use crate::{
+    Prompt,
+    client_common::ResponseEvent,
+    error::{CodexErr, Result as CodexResult},
+    protocol::{
+        AgentMessageEvent, CompactedItem, ErrorEvent, Event, EventMsg, InputItem, InputMessageKind,
+        TaskStartedEvent, TurnContextItem,
+    },
+    truncate::truncate_middle,
+    util::backoff,
+};
 use askama::Template;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseInputItem;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::RolloutItem;
+use codex_protocol::{
+    models::{ContentItem, ResponseInputItem, ResponseItem},
+    protocol::RolloutItem,
+};
 use futures::prelude::*;
 
 pub const SUMMARIZATION_PROMPT: &str = include_str!("../../templates/compact/prompt.md");

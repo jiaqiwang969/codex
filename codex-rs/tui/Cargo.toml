@@ -80,6 +80,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 unicode-segmentation = { workspace = true }
 unicode-width = { workspace = true }
 url = { workspace = true }
+git-graph = { path = "../../git-graph" }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

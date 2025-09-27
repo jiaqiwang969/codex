@@ -1,6 +1,4 @@
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Context, Result, anyhow};
 use std::io::Read;
 use zeroize::Zeroize;
 
@@ -73,10 +71,7 @@ where
 
 #[cfg(unix)]
 fn mlock_str(value: &str) {
-    use libc::_SC_PAGESIZE;
-    use libc::c_void;
-    use libc::mlock;
-    use libc::sysconf;
+    use libc::{_SC_PAGESIZE, c_void, mlock, sysconf};
 
     if value.is_empty() {
         return;

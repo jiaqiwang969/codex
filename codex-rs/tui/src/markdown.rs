@@ -1,5 +1,4 @@
-use codex_core::config::Config;
-use codex_core::config_types::UriBasedFileOpener;
+use codex_core::{config::Config, config_types::UriBasedFileOpener};
 use ratatui::text::Line;
 use std::path::Path;
 

@@ -1,7 +1,5 @@
-use ansi_to_tui::Error;
-use ansi_to_tui::IntoText;
-use ratatui::text::Line;
-use ratatui::text::Text;
+use ansi_to_tui::{Error, IntoText};
+use ratatui::text::{Line, Text};
 
 /// This function should be used when the contents of `s` are expected to match
 /// a single line. If multiple lines are found, a warning is logged and only the

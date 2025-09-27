@@ -1,23 +1,17 @@
 use anyhow::Context;
-use clap::CommandFactory;
-use clap::Parser;
-use clap_complete::Shell;
-use clap_complete::generate;
+use clap::{CommandFactory, Parser};
+use clap_complete::{Shell, generate};
 use codex_arg0::arg0_dispatch_or_else;
-use codex_chatgpt::apply_command::ApplyCommand;
-use codex_chatgpt::apply_command::run_apply_command;
-use codex_cli::LandlockCommand;
-use codex_cli::SeatbeltCommand;
-use codex_cli::login::run_login_status;
-use codex_cli::login::run_login_with_api_key;
-use codex_cli::login::run_login_with_chatgpt;
-use codex_cli::login::run_logout;
-use codex_cli::proto;
+use codex_chatgpt::apply_command::{ApplyCommand, run_apply_command};
+use codex_cli::{
+    LandlockCommand, SeatbeltCommand,
+    login::{run_login_status, run_login_with_api_key, run_login_with_chatgpt, run_logout},
+    proto,
+};
 use codex_common::CliConfigOverrides;
 use codex_exec::Cli as ExecCli;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
-use codex_tui::AppExitInfo;
-use codex_tui::Cli as TuiCli;
+use codex_tui::{AppExitInfo, Cli as TuiCli};
 use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use supports_color::Stream;
@@ -25,8 +19,7 @@ use supports_color::Stream;
 mod mcp_cmd;
 mod pre_main_hardening;
 
-use crate::mcp_cmd::McpCli;
-use crate::proto::ProtoCli;
+use crate::{mcp_cmd::McpCli, proto::ProtoCli};
 
 /// Codex CLI
 ///

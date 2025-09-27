@@ -1,6 +1,7 @@
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Span;
+use ratatui::{
+    style::{Style, Stylize},
+    text::Span,
+};
 use std::fmt::Display;
 
 #[cfg(test)]

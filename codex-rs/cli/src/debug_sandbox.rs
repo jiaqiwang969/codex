@@ -1,17 +1,16 @@
 use std::path::PathBuf;
 
 use codex_common::CliConfigOverrides;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::exec_env::create_env;
-use codex_core::landlock::spawn_command_under_linux_sandbox;
-use codex_core::seatbelt::spawn_command_under_seatbelt;
-use codex_core::spawn::StdioPolicy;
+use codex_core::{
+    config::{Config, ConfigOverrides},
+    exec_env::create_env,
+    landlock::spawn_command_under_linux_sandbox,
+    seatbelt::spawn_command_under_seatbelt,
+    spawn::StdioPolicy,
+};
 use codex_protocol::config_types::SandboxMode;
 
-use crate::LandlockCommand;
-use crate::SeatbeltCommand;
-use crate::exit_status::handle_exit_status;
+use crate::{LandlockCommand, SeatbeltCommand, exit_status::handle_exit_status};
 
 pub async fn run_command_under_seatbelt(
     command: SeatbeltCommand,

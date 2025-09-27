@@ -5,9 +5,7 @@
 //! untracked files. When the current directory is not inside a Git
 //! repository, the function returns `Ok((false, String::new()))`.
 
-use std::io;
-use std::path::Path;
-use std::process::Stdio;
+use std::{io, path::Path, process::Stdio};
 use tokio::process::Command;
 
 /// Return value of [`get_git_diff`].

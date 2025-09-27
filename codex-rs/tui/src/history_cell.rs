@@ -1,51 +1,37 @@
-use crate::diff_render::create_diff_summary;
-use crate::exec_cell::CommandOutput;
-use crate::exec_cell::OutputLinesParams;
-use crate::exec_cell::TOOL_CALL_MAX_LINES;
-use crate::exec_cell::output_lines;
-use crate::exec_cell::spinner;
-use crate::exec_command::relativize_to_home;
-use crate::exec_command::strip_bash_lc_and_escape;
-use crate::markdown::append_markdown;
-use crate::render::line_utils::line_to_static;
-use crate::render::line_utils::prefix_lines;
-use crate::style::user_message_style;
-use crate::terminal_palette::default_bg;
-use crate::text_formatting::format_and_truncate_tool_result;
-use crate::ui_consts::LIVE_PREFIX_COLS;
-use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_line;
-use crate::wrapping::word_wrap_lines;
+use crate::{
+    diff_render::create_diff_summary,
+    exec_cell::{CommandOutput, OutputLinesParams, TOOL_CALL_MAX_LINES, output_lines, spinner},
+    exec_command::{relativize_to_home, strip_bash_lc_and_escape},
+    markdown::append_markdown,
+    render::line_utils::{line_to_static, prefix_lines},
+    style::user_message_style,
+    terminal_palette::default_bg,
+    text_formatting::format_and_truncate_tool_result,
+    ui_consts::LIVE_PREFIX_COLS,
+    wrapping::{RtOptions, word_wrap_line, word_wrap_lines},
+};
 use base64::Engine;
-use codex_core::config::Config;
-use codex_core::config_types::McpServerTransportConfig;
-use codex_core::config_types::ReasoningSummaryFormat;
-use codex_core::plan_tool::PlanItemArg;
-use codex_core::plan_tool::StepStatus;
-use codex_core::plan_tool::UpdatePlanArgs;
-use codex_core::protocol::FileChange;
-use codex_core::protocol::McpInvocation;
-use codex_core::protocol::SessionConfiguredEvent;
-use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
-use image::DynamicImage;
-use image::ImageReader;
-use mcp_types::EmbeddedResourceResource;
-use mcp_types::ResourceLink;
-use ratatui::prelude::*;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::style::Styled;
-use ratatui::style::Stylize;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
-use std::any::Any;
-use std::collections::HashMap;
-use std::io::Cursor;
-use std::path::Path;
-use std::path::PathBuf;
-use std::time::Duration;
-use std::time::Instant;
+use codex_core::{
+    config::Config,
+    config_types::{McpServerTransportConfig, ReasoningSummaryFormat},
+    plan_tool::{PlanItemArg, StepStatus, UpdatePlanArgs},
+    protocol::{FileChange, McpInvocation, SessionConfiguredEvent},
+    protocol_config_types::ReasoningEffort as ReasoningEffortConfig,
+};
+use image::{DynamicImage, ImageReader};
+use mcp_types::{EmbeddedResourceResource, ResourceLink};
+use ratatui::{
+    prelude::*,
+    style::{Modifier, Style, Styled, Stylize},
+    widgets::{Paragraph, WidgetRef, Wrap},
+};
+use std::{
+    any::Any,
+    collections::HashMap,
+    io::Cursor,
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 use tracing::error;
 use unicode_width::UnicodeWidthStr;
 
@@ -1148,20 +1134,14 @@ fn format_mcp_invocation<'a>(invocation: McpInvocation) -> Line<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::exec_cell::CommandOutput;
-    use crate::exec_cell::ExecCall;
-    use crate::exec_cell::ExecCell;
-    use codex_core::config::Config;
-    use codex_core::config::ConfigOverrides;
-    use codex_core::config::ConfigToml;
+    use crate::exec_cell::{CommandOutput, ExecCall, ExecCell};
+    use codex_core::config::{Config, ConfigOverrides, ConfigToml};
     use codex_protocol::parse_command::ParsedCommand;
     use dirs::home_dir;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use mcp_types::CallToolResult;
-    use mcp_types::ContentBlock;
-    use mcp_types::TextContent;
+    use mcp_types::{CallToolResult, ContentBlock, TextContent};
 
     fn test_config() -> Config {
         Config::load_from_base_config_with_overrides(

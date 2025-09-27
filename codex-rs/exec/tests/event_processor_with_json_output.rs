@@ -1,36 +1,20 @@
-use codex_core::protocol::AgentMessageEvent;
-use codex_core::protocol::AgentReasoningEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecCommandBeginEvent;
-use codex_core::protocol::ExecCommandEndEvent;
-use codex_core::protocol::FileChange;
-use codex_core::protocol::PatchApplyBeginEvent;
-use codex_core::protocol::PatchApplyEndEvent;
-use codex_core::protocol::SessionConfiguredEvent;
-use codex_exec::exec_events::AssistantMessageItem;
-use codex_exec::exec_events::CommandExecutionItem;
-use codex_exec::exec_events::CommandExecutionStatus;
-use codex_exec::exec_events::ConversationErrorEvent;
-use codex_exec::exec_events::ConversationEvent;
-use codex_exec::exec_events::ConversationItem;
-use codex_exec::exec_events::ConversationItemDetails;
-use codex_exec::exec_events::ItemCompletedEvent;
-use codex_exec::exec_events::ItemStartedEvent;
-use codex_exec::exec_events::ItemUpdatedEvent;
-use codex_exec::exec_events::PatchApplyStatus;
-use codex_exec::exec_events::PatchChangeKind;
-use codex_exec::exec_events::ReasoningItem;
-use codex_exec::exec_events::SessionCreatedEvent;
-use codex_exec::exec_events::TodoItem as ExecTodoItem;
-use codex_exec::exec_events::TodoListItem as ExecTodoListItem;
-use codex_exec::exec_events::TurnCompletedEvent;
-use codex_exec::exec_events::TurnStartedEvent;
-use codex_exec::exec_events::Usage;
-use codex_exec::experimental_event_processor_with_json_output::ExperimentalEventProcessorWithJsonOutput;
+use codex_core::protocol::{
+    AgentMessageEvent, AgentReasoningEvent, Event, EventMsg, ExecCommandBeginEvent,
+    ExecCommandEndEvent, FileChange, PatchApplyBeginEvent, PatchApplyEndEvent,
+    SessionConfiguredEvent,
+};
+use codex_exec::{
+    exec_events::{
+        AssistantMessageItem, CommandExecutionItem, CommandExecutionStatus, ConversationErrorEvent,
+        ConversationEvent, ConversationItem, ConversationItemDetails, ItemCompletedEvent,
+        ItemStartedEvent, ItemUpdatedEvent, PatchApplyStatus, PatchChangeKind, ReasoningItem,
+        SessionCreatedEvent, TodoItem as ExecTodoItem, TodoListItem as ExecTodoListItem,
+        TurnCompletedEvent, TurnStartedEvent, Usage,
+    },
+    experimental_event_processor_with_json_output::ExperimentalEventProcessorWithJsonOutput,
+};
 use pretty_assertions::assert_eq;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 fn event(id: &str, msg: EventMsg) -> Event {
     Event {
@@ -86,9 +70,7 @@ fn task_started_produces_turn_started_event() {
 
 #[test]
 fn plan_update_emits_todo_list_started_updated_and_completed() {
-    use codex_core::plan_tool::PlanItemArg;
-    use codex_core::plan_tool::StepStatus;
-    use codex_core::plan_tool::UpdatePlanArgs;
+    use codex_core::plan_tool::{PlanItemArg, StepStatus, UpdatePlanArgs};
 
     let mut ep = ExperimentalEventProcessorWithJsonOutput::new(None);
 
@@ -207,9 +189,7 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
 
 #[test]
 fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
-    use codex_core::plan_tool::PlanItemArg;
-    use codex_core::plan_tool::StepStatus;
-    use codex_core::plan_tool::UpdatePlanArgs;
+    use codex_core::plan_tool::{PlanItemArg, StepStatus, UpdatePlanArgs};
 
     let mut ep = ExperimentalEventProcessorWithJsonOutput::new(None);
 

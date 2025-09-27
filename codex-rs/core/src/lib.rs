@@ -39,20 +39,17 @@ pub mod parse_command;
 mod truncate;
 mod unified_exec;
 mod user_instructions;
-pub use model_provider_info::BUILT_IN_OSS_MODEL_PROVIDER_ID;
-pub use model_provider_info::ModelProviderInfo;
-pub use model_provider_info::WireApi;
-pub use model_provider_info::built_in_model_providers;
-pub use model_provider_info::create_oss_provider_with_base_url;
+pub use model_provider_info::{
+    BUILT_IN_OSS_MODEL_PROVIDER_ID, ModelProviderInfo, WireApi, built_in_model_providers,
+    create_oss_provider_with_base_url,
+};
 mod conversation_manager;
 mod event_mapping;
 pub mod review_format;
 pub use codex_protocol::protocol::InitialHistory;
-pub use conversation_manager::ConversationManager;
-pub use conversation_manager::NewConversation;
+pub use conversation_manager::{ConversationManager, NewConversation};
 // Re-export common auth types for workspace consumers
-pub use auth::AuthManager;
-pub use auth::CodexAuth;
+pub use auth::{AuthManager, CodexAuth};
 pub mod default_client;
 pub mod model_family;
 mod openai_model_info;
@@ -67,14 +64,11 @@ pub mod spawn;
 pub mod terminal;
 mod tool_apply_patch;
 pub mod turn_diff_tracker;
-pub use rollout::ARCHIVED_SESSIONS_SUBDIR;
-pub use rollout::RolloutRecorder;
-pub use rollout::SESSIONS_SUBDIR;
-pub use rollout::SessionMeta;
-pub use rollout::find_conversation_path_by_id_str;
-pub use rollout::list::ConversationItem;
-pub use rollout::list::ConversationsPage;
-pub use rollout::list::Cursor;
+pub use rollout::{
+    ARCHIVED_SESSIONS_SUBDIR, RolloutRecorder, SESSIONS_SUBDIR, SessionMeta,
+    find_conversation_path_by_id_str,
+    list::{ConversationItem, ConversationsPage, Cursor},
+};
 mod function_tool;
 mod state;
 mod tasks;
@@ -92,15 +86,9 @@ pub use codex_protocol::protocol;
 pub use codex_protocol::config_types as protocol_config_types;
 
 pub use client::ModelClient;
-pub use client_common::Prompt;
-pub use client_common::REVIEW_PROMPT;
-pub use client_common::ResponseEvent;
-pub use client_common::ResponseStream;
-pub use codex::compact::content_items_to_text;
-pub use codex::compact::is_session_prefix_message;
-pub use codex_protocol::models::ContentItem;
-pub use codex_protocol::models::LocalShellAction;
-pub use codex_protocol::models::LocalShellExecAction;
-pub use codex_protocol::models::LocalShellStatus;
-pub use codex_protocol::models::ReasoningItemContent;
-pub use codex_protocol::models::ResponseItem;
+pub use client_common::{Prompt, REVIEW_PROMPT, ResponseEvent, ResponseStream};
+pub use codex::compact::{content_items_to_text, is_session_prefix_message};
+pub use codex_protocol::models::{
+    ContentItem, LocalShellAction, LocalShellExecAction, LocalShellStatus, ReasoningItemContent,
+    ResponseItem,
+};

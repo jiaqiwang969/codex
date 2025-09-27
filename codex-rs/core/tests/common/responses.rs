@@ -1,11 +1,8 @@
 use serde_json::Value;
-use wiremock::BodyPrintLimit;
-use wiremock::Mock;
-use wiremock::MockServer;
-use wiremock::Respond;
-use wiremock::ResponseTemplate;
-use wiremock::matchers::method;
-use wiremock::matchers::path;
+use wiremock::{
+    BodyPrintLimit, Mock, MockServer, Respond, ResponseTemplate,
+    matchers::{method, path},
+};
 
 /// Build an SSE stream body from a list of JSON events.
 pub fn sse(events: Vec<Value>) -> String {
@@ -138,8 +135,7 @@ pub async fn start_mock_server() -> MockServer {
 /// POST to `/v1/responses`. Panics if more requests are received than bodies
 /// provided. Also asserts the exact number of expected calls.
 pub async fn mount_sse_sequence(server: &MockServer, bodies: Vec<String>) {
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct SeqResponder {
         num_calls: AtomicUsize,

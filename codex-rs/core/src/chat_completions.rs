@@ -2,31 +2,25 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use eventsource_stream::Eventsource;
-use futures::Stream;
-use futures::StreamExt;
-use futures::TryStreamExt;
+use futures::{Stream, StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use serde_json::json;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
-use tokio::sync::mpsc;
-use tokio::time::timeout;
-use tracing::debug;
-use tracing::trace;
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tokio::{sync::mpsc, time::timeout};
+use tracing::{debug, trace};
 
-use crate::ModelProviderInfo;
-use crate::client_common::Prompt;
-use crate::client_common::ResponseEvent;
-use crate::client_common::ResponseStream;
-use crate::error::CodexErr;
-use crate::error::Result;
-use crate::model_family::ModelFamily;
-use crate::openai_tools::create_tools_json_for_chat_completions_api;
-use crate::util::backoff;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ReasoningItemContent;
-use codex_protocol::models::ResponseItem;
+use crate::{
+    ModelProviderInfo,
+    client_common::{Prompt, ResponseEvent, ResponseStream},
+    error::{CodexErr, Result},
+    model_family::ModelFamily,
+    openai_tools::create_tools_json_for_chat_completions_api,
+    util::backoff,
+};
+use codex_protocol::models::{ContentItem, ReasoningItemContent, ResponseItem};
 
 /// Implementation for the classic Chat Completions API.
 pub(crate) async fn stream_chat_completions(

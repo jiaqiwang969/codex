@@ -6,30 +6,24 @@
 //! in a single aggregated map using the fully-qualified tool name
 //! `"<server><MCP_TOOL_NAME_DELIMITER><tool>"` as the key.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::ffi::OsString;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsString,
+    sync::Arc,
+    time::Duration,
+};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Context, Result, anyhow};
 use codex_mcp_client::McpClient;
 use codex_rmcp_client::RmcpClient;
-use mcp_types::ClientCapabilities;
-use mcp_types::Implementation;
-use mcp_types::Tool;
+use mcp_types::{ClientCapabilities, Implementation, Tool};
 
 use serde_json::json;
-use sha1::Digest;
-use sha1::Sha1;
+use sha1::{Digest, Sha1};
 use tokio::task::JoinSet;
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
-use crate::config_types::McpServerConfig;
-use crate::config_types::McpServerTransportConfig;
+use crate::config_types::{McpServerConfig, McpServerTransportConfig};
 
 /// Delimiter used to separate the server name from the tool name in a fully
 /// qualified tool name.

@@ -1,11 +1,11 @@
-use crossterm::event::KeyCode;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::widgets::WidgetRef;
+use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    text::{Line, Span},
+    widgets::WidgetRef,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FooterProps {
@@ -188,6 +188,7 @@ enum ShortcutId {
     EditPrevious,
     Quit,
     ShowTranscript,
+    ShowGitGraph,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -359,14 +360,24 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
         prefix: "",
         label: " to view transcript",
     },
+    ShortcutDescriptor {
+        id: ShortcutId::ShowGitGraph,
+        bindings: &[ShortcutBinding {
+            code: KeyCode::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+            overlay_text: "ctrl + g",
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " to view git graph",
+    },
 ];
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use insta::assert_snapshot;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn snapshot_footer(name: &str, props: FooterProps) {
         let height = footer_height(props).max(1);

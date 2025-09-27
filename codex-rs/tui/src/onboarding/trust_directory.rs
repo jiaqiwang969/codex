@@ -1,22 +1,17 @@
 use std::path::PathBuf;
 
-use codex_core::config::set_project_trusted;
-use codex_core::git_info::resolve_root_git_project_for_trust;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::prelude::Widget;
-use ratatui::style::Color;
-use ratatui::style::Modifier;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
+use codex_core::{config::set_project_trusted, git_info::resolve_root_git_project_for_trust};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    prelude::Widget,
+    style::{Color, Modifier, Stylize},
+    text::Line,
+    widgets::{Paragraph, WidgetRef, Wrap},
+};
 
-use crate::onboarding::onboarding_screen::KeyboardHandler;
-use crate::onboarding::onboarding_screen::StepStateProvider;
+use crate::onboarding::onboarding_screen::{KeyboardHandler, StepStateProvider};
 
 use super::onboarding_screen::StepState;
 

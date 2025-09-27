@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
+use crate::{app_event::AppEvent, app_event_sender::AppEventSender};
 use codex_core::protocol::Op;
 
 /// State machine that manages shell-style history navigation (Up/Down) inside

@@ -1,25 +1,21 @@
-use crate::AuthManager;
-use crate::CodexAuth;
-use crate::codex::Codex;
-use crate::codex::CodexSpawnOk;
-use crate::codex::INITIAL_SUBMIT_ID;
-use crate::codex::compact::content_items_to_text;
-use crate::codex::compact::is_session_prefix_message;
-use crate::codex_conversation::CodexConversation;
-use crate::config::Config;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
-use crate::protocol::Event;
-use crate::protocol::EventMsg;
-use crate::protocol::SessionConfiguredEvent;
-use crate::rollout::RolloutRecorder;
-use codex_protocol::mcp_protocol::ConversationId;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::InitialHistory;
-use codex_protocol::protocol::RolloutItem;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::{
+    AuthManager, CodexAuth,
+    codex::{
+        Codex, CodexSpawnOk, INITIAL_SUBMIT_ID,
+        compact::{content_items_to_text, is_session_prefix_message},
+    },
+    codex_conversation::CodexConversation,
+    config::Config,
+    error::{CodexErr, Result as CodexResult},
+    protocol::{Event, EventMsg, SessionConfiguredEvent},
+    rollout::RolloutRecorder,
+};
+use codex_protocol::{
+    mcp_protocol::ConversationId,
+    models::ResponseItem,
+    protocol::{InitialHistory, RolloutItem},
+};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 
 /// Represents a newly created Codex conversation, including the first event
@@ -198,9 +194,7 @@ fn truncate_before_nth_user_message(history: InitialHistory, n: usize) -> Initia
 mod tests {
     use super::*;
     use crate::codex::make_session_and_context;
-    use codex_protocol::models::ContentItem;
-    use codex_protocol::models::ReasoningItemReasoningSummary;
-    use codex_protocol::models::ResponseItem;
+    use codex_protocol::models::{ContentItem, ReasoningItemReasoningSummary, ResponseItem};
     use pretty_assertions::assert_eq;
 
     fn user_msg(text: &str) -> ResponseItem {

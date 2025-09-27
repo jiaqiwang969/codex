@@ -14,21 +14,18 @@
 //! the file descriptor is opened with the `O_APPEND` flag. POSIX guarantees
 //! that writes up to `PIPE_BUF` bytes are atomic in that case.
 
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::Result;
-use std::io::Write;
-use std::path::PathBuf;
+use std::{
+    fs::{File, OpenOptions},
+    io::{Result, Write},
+    path::PathBuf,
+};
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use std::time::Duration;
-use tokio::fs;
-use tokio::io::AsyncReadExt;
+use tokio::{fs, io::AsyncReadExt};
 
-use crate::config::Config;
-use crate::config_types::HistoryPersistence;
+use crate::{config::Config, config_types::HistoryPersistence};
 
 use codex_protocol::mcp_protocol::ConversationId;
 #[cfg(unix)]
@@ -188,9 +185,10 @@ pub(crate) async fn history_metadata(config: &Config) -> (u64, usize) {
 /// locking API.
 #[cfg(unix)]
 pub(crate) fn lookup(log_id: u64, offset: usize, config: &Config) -> Option<HistoryEntry> {
-    use std::io::BufRead;
-    use std::io::BufReader;
-    use std::os::unix::fs::MetadataExt;
+    use std::{
+        io::{BufRead, BufReader},
+        os::unix::fs::MetadataExt,
+    };
 
     let path = history_filepath(config);
     let file: File = match OpenOptions::new().read(true).open(&path) {

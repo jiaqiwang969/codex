@@ -1,6 +1,4 @@
-use std::path::PathBuf;
-use std::process::ExitStatus;
-use std::string::FromUtf8Error;
+use std::{path::PathBuf, process::ExitStatus, string::FromUtf8Error};
 
 use thiserror::Error;
 use walkdir::Error as WalkdirError;

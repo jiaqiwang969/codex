@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::openai_tools::JsonSchema;
-use crate::openai_tools::ResponsesApiTool;
+use crate::openai_tools::{JsonSchema, ResponsesApiTool};
 
 pub const EXEC_COMMAND_TOOL_NAME: &str = "exec_command";
 pub const WRITE_STDIN_TOOL_NAME: &str = "write_stdin";

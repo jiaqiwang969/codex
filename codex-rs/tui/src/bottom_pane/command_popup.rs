@@ -1,13 +1,11 @@
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::widgets::WidgetRef;
+use ratatui::{buffer::Buffer, layout::Rect, widgets::WidgetRef};
 
-use super::popup_consts::MAX_POPUP_ROWS;
-use super::scroll_state::ScrollState;
-use super::selection_popup_common::GenericDisplayRow;
-use super::selection_popup_common::render_rows;
-use crate::slash_command::SlashCommand;
-use crate::slash_command::built_in_slash_commands;
+use super::{
+    popup_consts::MAX_POPUP_ROWS,
+    scroll_state::ScrollState,
+    selection_popup_common::{GenericDisplayRow, render_rows},
+};
+use crate::slash_command::{SlashCommand, built_in_slash_commands};
 use codex_common::fuzzy_match::fuzzy_match;
 use codex_protocol::custom_prompts::CustomPrompt;
 use std::collections::HashSet;

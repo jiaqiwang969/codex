@@ -1,5 +1,4 @@
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // Types for the TODO tool arguments matching codex-vscode/todo-mcp/src/main.rs

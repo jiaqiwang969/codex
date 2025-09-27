@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::codex::TurnContext;
-use crate::codex::run_task;
-use crate::protocol::InputItem;
-use crate::state::TaskKind;
+use crate::{
+    codex::{TurnContext, run_task},
+    protocol::InputItem,
+    state::TaskKind,
+};
 
-use super::SessionTask;
-use super::SessionTaskContext;
+use super::{SessionTask, SessionTaskContext};
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct RegularTask;

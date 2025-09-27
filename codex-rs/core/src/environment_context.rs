@@ -1,16 +1,16 @@
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strum_macros::Display as DeriveDisplay;
 
-use crate::codex::TurnContext;
-use crate::protocol::AskForApproval;
-use crate::protocol::SandboxPolicy;
-use crate::shell::Shell;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::ENVIRONMENT_CONTEXT_CLOSE_TAG;
-use codex_protocol::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
+use crate::{
+    codex::TurnContext,
+    protocol::{AskForApproval, SandboxPolicy},
+    shell::Shell,
+};
+use codex_protocol::{
+    config_types::SandboxMode,
+    models::{ContentItem, ResponseItem},
+    protocol::{ENVIRONMENT_CONTEXT_CLOSE_TAG, ENVIRONMENT_CONTEXT_OPEN_TAG},
+};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, DeriveDisplay)]
@@ -174,8 +174,7 @@ impl From<EnvironmentContext> for ResponseItem {
 
 #[cfg(test)]
 mod tests {
-    use crate::shell::BashShell;
-    use crate::shell::ZshShell;
+    use crate::shell::{BashShell, ZshShell};
 
     use super::*;
     use pretty_assertions::assert_eq;

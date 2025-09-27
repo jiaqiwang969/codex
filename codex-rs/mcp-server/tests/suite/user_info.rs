@@ -1,18 +1,14 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use codex_core::auth::AuthDotJson;
-use codex_core::auth::get_auth_file;
-use codex_core::auth::write_auth_json;
-use codex_core::token_data::IdTokenInfo;
-use codex_core::token_data::TokenData;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use codex_core::{
+    auth::{AuthDotJson, get_auth_file, write_auth_json},
+    token_data::{IdTokenInfo, TokenData},
+};
 use codex_protocol::mcp_protocol::UserInfoResponse;
-use mcp_test_support::McpProcess;
-use mcp_test_support::to_response;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use mcp_test_support::{McpProcess, to_response};
+use mcp_types::{JSONRPCResponse, RequestId};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;

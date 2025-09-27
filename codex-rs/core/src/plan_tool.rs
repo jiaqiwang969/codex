@@ -1,19 +1,15 @@
-use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::{collections::BTreeMap, sync::LazyLock};
 
-use crate::codex::Session;
-use crate::function_tool::FunctionCallError;
-use crate::openai_tools::JsonSchema;
-use crate::openai_tools::OpenAiTool;
-use crate::openai_tools::ResponsesApiTool;
-use crate::protocol::Event;
-use crate::protocol::EventMsg;
+use crate::{
+    codex::Session,
+    function_tool::FunctionCallError,
+    openai_tools::{JsonSchema, OpenAiTool, ResponsesApiTool},
+    protocol::{Event, EventMsg},
+};
 
 // Use the canonical plan tool types from the protocol crate to ensure
 // type-identity matches events transported via `codex_protocol`.
-pub use codex_protocol::plan_tool::PlanItemArg;
-pub use codex_protocol::plan_tool::StepStatus;
-pub use codex_protocol::plan_tool::UpdatePlanArgs;
+pub use codex_protocol::plan_tool::{PlanItemArg, StepStatus, UpdatePlanArgs};
 
 // Types for the TODO tool arguments matching codex-vscode/todo-mcp/src/main.rs
 

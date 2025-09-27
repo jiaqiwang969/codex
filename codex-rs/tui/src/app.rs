@@ -1,37 +1,30 @@
-use crate::app_backtrack::BacktrackState;
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::chatwidget::ChatWidget;
-use crate::file_search::FileSearchManager;
-use crate::history_cell::HistoryCell;
-use crate::pager_overlay::Overlay;
-use crate::resume_picker::ResumeSelection;
-use crate::tui;
-use crate::tui::TuiEvent;
+use crate::{
+    app_backtrack::BacktrackState, app_event::AppEvent, app_event_sender::AppEventSender,
+    chatwidget::ChatWidget, file_search::FileSearchManager, history_cell::HistoryCell,
+    pager_overlay::Overlay, resume_picker::ResumeSelection, tui, tui::TuiEvent,
+};
 use codex_ansi_escape::ansi_escape_line;
-use codex_core::AuthManager;
-use codex_core::ConversationManager;
-use codex_core::config::Config;
-use codex_core::config::persist_model_selection;
-use codex_core::model_family::find_family_for_model;
-use codex_core::protocol::TokenUsage;
-use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
+use codex_core::{
+    AuthManager, ConversationManager,
+    config::{Config, persist_model_selection},
+    model_family::find_family_for_model,
+    protocol::TokenUsage,
+    protocol_config_types::ReasoningEffort as ReasoningEffortConfig,
+};
 use codex_protocol::mcp_protocol::ConversationId;
-use color_eyre::eyre::Result;
-use color_eyre::eyre::WrapErr;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::thread;
-use std::time::Duration;
-use tokio::select;
-use tokio::sync::mpsc::unbounded_channel;
+use color_eyre::eyre::{Result, WrapErr};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{style::Stylize, text::Line};
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
+};
+use tokio::{select, sync::mpsc::unbounded_channel};
 // use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -389,6 +382,38 @@ impl App {
                 self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
                 tui.frame_requester().schedule_frame();
             }
+            KeyEvent {
+                code: KeyCode::Char('g'),
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                // Show git graph for current directory
+                match crate::git_graph_widget::create_git_graph_overlay(".") {
+                    Ok(overlay) => {
+                        let _ = tui.enter_alt_screen();
+                        self.overlay = Some(overlay);
+                        tui.frame_requester().schedule_frame();
+                    }
+                    Err(err) => {
+                        // Show error message to user via overlay
+                        let error_lines = vec![
+                            "Failed to generate git graph:".red().into(),
+                            Line::from(""),
+                            err.clone().dim().into(),
+                            Line::from(""),
+                            "Make sure you are in a git repository.".italic().into(),
+                        ];
+                        let _ = tui.enter_alt_screen();
+                        self.overlay = Some(Overlay::new_static_with_title(
+                            error_lines,
+                            "G I T   G R A P H   E R R O R".to_string(),
+                        ));
+                        tui.frame_requester().schedule_frame();
+                        tracing::warn!("Failed to create git graph: {}", err);
+                    }
+                }
+            }
             // Esc primes/advances backtracking only in normal (not working) mode
             // with an empty composer. In any other state, forward Esc so the
             // active UI (e.g. status indicator, modals, popups) handles it.
@@ -439,23 +464,21 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_backtrack::BacktrackState;
-    use crate::app_backtrack::user_count;
-    use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
-    use crate::file_search::FileSearchManager;
-    use crate::history_cell::AgentMessageCell;
-    use crate::history_cell::HistoryCell;
-    use crate::history_cell::UserHistoryCell;
-    use crate::history_cell::new_session_info;
-    use codex_core::AuthManager;
-    use codex_core::CodexAuth;
-    use codex_core::ConversationManager;
-    use codex_core::protocol::SessionConfiguredEvent;
+    use crate::{
+        app_backtrack::{BacktrackState, user_count},
+        chatwidget::tests::make_chatwidget_manual_with_sender,
+        file_search::FileSearchManager,
+        history_cell::{AgentMessageCell, HistoryCell, UserHistoryCell, new_session_info},
+    };
+    use codex_core::{
+        AuthManager, CodexAuth, ConversationManager, protocol::SessionConfiguredEvent,
+    };
     use codex_protocol::mcp_protocol::ConversationId;
     use ratatui::prelude::Line;
-    use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
+    use std::{
+        path::PathBuf,
+        sync::{Arc, atomic::AtomicBool},
+    };
 
     fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();

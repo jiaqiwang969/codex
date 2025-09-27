@@ -1,48 +1,25 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::{collections::HashMap, path::PathBuf, sync::atomic::AtomicU64};
 
-use crate::event_processor::CodexStatus;
-use crate::event_processor::EventProcessor;
-use crate::event_processor::handle_last_message;
-use crate::exec_events::AssistantMessageItem;
-use crate::exec_events::CommandExecutionItem;
-use crate::exec_events::CommandExecutionStatus;
-use crate::exec_events::ConversationErrorEvent;
-use crate::exec_events::ConversationEvent;
-use crate::exec_events::ConversationItem;
-use crate::exec_events::ConversationItemDetails;
-use crate::exec_events::FileChangeItem;
-use crate::exec_events::FileUpdateChange;
-use crate::exec_events::ItemCompletedEvent;
-use crate::exec_events::ItemStartedEvent;
-use crate::exec_events::ItemUpdatedEvent;
-use crate::exec_events::PatchApplyStatus;
-use crate::exec_events::PatchChangeKind;
-use crate::exec_events::ReasoningItem;
-use crate::exec_events::SessionCreatedEvent;
-use crate::exec_events::TodoItem;
-use crate::exec_events::TodoListItem;
-use crate::exec_events::TurnCompletedEvent;
-use crate::exec_events::TurnStartedEvent;
-use crate::exec_events::Usage;
-use codex_core::config::Config;
-use codex_core::plan_tool::StepStatus;
-use codex_core::plan_tool::UpdatePlanArgs;
-use codex_core::protocol::AgentMessageEvent;
-use codex_core::protocol::AgentReasoningEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecCommandBeginEvent;
-use codex_core::protocol::ExecCommandEndEvent;
-use codex_core::protocol::FileChange;
-use codex_core::protocol::PatchApplyBeginEvent;
-use codex_core::protocol::PatchApplyEndEvent;
-use codex_core::protocol::SessionConfiguredEvent;
-use codex_core::protocol::TaskCompleteEvent;
-use codex_core::protocol::TaskStartedEvent;
-use tracing::error;
-use tracing::warn;
+use crate::{
+    event_processor::{CodexStatus, EventProcessor, handle_last_message},
+    exec_events::{
+        AssistantMessageItem, CommandExecutionItem, CommandExecutionStatus, ConversationErrorEvent,
+        ConversationEvent, ConversationItem, ConversationItemDetails, FileChangeItem,
+        FileUpdateChange, ItemCompletedEvent, ItemStartedEvent, ItemUpdatedEvent, PatchApplyStatus,
+        PatchChangeKind, ReasoningItem, SessionCreatedEvent, TodoItem, TodoListItem,
+        TurnCompletedEvent, TurnStartedEvent, Usage,
+    },
+};
+use codex_core::{
+    config::Config,
+    plan_tool::{StepStatus, UpdatePlanArgs},
+    protocol::{
+        AgentMessageEvent, AgentReasoningEvent, Event, EventMsg, ExecCommandBeginEvent,
+        ExecCommandEndEvent, FileChange, PatchApplyBeginEvent, PatchApplyEndEvent,
+        SessionConfiguredEvent, TaskCompleteEvent, TaskStartedEvent,
+    },
+};
+use tracing::{error, warn};
 
 pub struct ExperimentalEventProcessorWithJsonOutput {
     last_message_path: Option<PathBuf>,

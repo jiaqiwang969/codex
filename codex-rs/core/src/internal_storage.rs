@@ -1,9 +1,9 @@
 use anyhow::Context;
-use serde::Deserialize;
-use serde::Serialize;
-use std::io::ErrorKind;
-use std::path::Path;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 pub(crate) const INTERNAL_STORAGE_FILE: &str = "internal_storage.json";
 

@@ -1,25 +1,24 @@
 use std::time::Instant;
 
-use super::model::CommandOutput;
-use super::model::ExecCall;
-use super::model::ExecCell;
-use crate::exec_command::strip_bash_lc_and_escape;
-use crate::history_cell::HistoryCell;
-use crate::render::highlight::highlight_bash_to_lines;
-use crate::render::line_utils::prefix_lines;
-use crate::render::line_utils::push_owned_lines;
-use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_line;
+use super::model::{CommandOutput, ExecCall, ExecCell};
+use crate::{
+    exec_command::strip_bash_lc_and_escape,
+    history_cell::HistoryCell,
+    render::{
+        highlight::highlight_bash_to_lines,
+        line_utils::{prefix_lines, push_owned_lines},
+    },
+    wrapping::{RtOptions, word_wrap_line},
+};
 use codex_ansi_escape::ansi_escape_line;
 use codex_common::elapsed::format_duration;
 use codex_protocol::parse_command::ParsedCommand;
 use itertools::Itertools;
-use ratatui::prelude::*;
-use ratatui::style::Modifier;
-use ratatui::style::Stylize;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
+use ratatui::{
+    prelude::*,
+    style::{Modifier, Stylize},
+    widgets::{Paragraph, WidgetRef, Wrap},
+};
 use textwrap::WordSplitter;
 use unicode_width::UnicodeWidthStr;
 

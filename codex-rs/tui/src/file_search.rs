@@ -19,17 +19,18 @@
 //!    the user typed, it is cancelled.
 
 use codex_file_search as file_search;
-use std::num::NonZeroUsize;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::thread;
-use std::time::Duration;
+use std::{
+    num::NonZeroUsize,
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
+};
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
+use crate::{app_event::AppEvent, app_event_sender::AppEventSender};
 
 const MAX_FILE_SEARCH_RESULTS: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 const NUM_FILE_SEARCH_THREADS: NonZeroUsize = NonZeroUsize::new(2).unwrap();

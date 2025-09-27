@@ -1,18 +1,13 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
-use anyhow::bail;
+use anyhow::{Context, Result, anyhow, bail};
 use codex_common::CliConfigOverrides;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::find_codex_home;
-use codex_core::config::load_global_mcp_servers;
-use codex_core::config::write_global_mcp_servers;
-use codex_core::config_types::McpServerConfig;
-use codex_core::config_types::McpServerTransportConfig;
+use codex_core::{
+    config::{
+        Config, ConfigOverrides, find_codex_home, load_global_mcp_servers, write_global_mcp_servers,
+    },
+    config_types::{McpServerConfig, McpServerTransportConfig},
+};
 
 /// [experimental] Launch Codex as an MCP server or manage configured MCP servers.
 ///

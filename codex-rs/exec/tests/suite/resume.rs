@@ -2,8 +2,7 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
 use serde_json::Value;
-use std::process::Command;
-use std::string::ToString;
+use std::{process::Command, string::ToString};
 use tempfile::TempDir;
 use uuid::Uuid;
 use walkdir::WalkDir;

@@ -1,13 +1,11 @@
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
-use std::ffi::OsStr;
-use std::fs;
-use std::io::Read;
-use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
+use anyhow::{Context, Result, anyhow};
+use std::{
+    ffi::OsStr,
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    process::Command,
+};
 use ts_rs::TS;
 
 const HEADER: &str = "// GENERATED CODE! DO NOT MODIFY BY HAND!\n\n";

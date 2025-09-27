@@ -1,12 +1,11 @@
-use crate::exec::ExecToolCallOutput;
-use crate::token_data::KnownPlan;
-use crate::token_data::PlanType;
-use codex_protocol::mcp_protocol::ConversationId;
-use codex_protocol::protocol::RateLimitSnapshot;
+use crate::{
+    exec::ExecToolCallOutput,
+    token_data::{KnownPlan, PlanType},
+};
+use codex_protocol::{mcp_protocol::ConversationId, protocol::RateLimitSnapshot};
 use reqwest::StatusCode;
 use serde_json;
-use std::io;
-use std::time::Duration;
+use std::{io, time::Duration};
 use thiserror::Error;
 use tokio::task::JoinError;
 

@@ -1,20 +1,13 @@
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::path::PathBuf;
+use std::{collections::HashMap, fmt::Display, path::PathBuf};
 
-use crate::config_types::ReasoningEffort;
-use crate::config_types::ReasoningSummary;
-use crate::config_types::SandboxMode;
-use crate::config_types::Verbosity;
-use crate::protocol::AskForApproval;
-use crate::protocol::EventMsg;
-use crate::protocol::FileChange;
-use crate::protocol::ReviewDecision;
-use crate::protocol::SandboxPolicy;
-use crate::protocol::TurnAbortReason;
+use crate::{
+    config_types::{ReasoningEffort, ReasoningSummary, SandboxMode, Verbosity},
+    protocol::{
+        AskForApproval, EventMsg, FileChange, ReviewDecision, SandboxPolicy, TurnAbortReason,
+    },
+};
 use mcp_types::RequestId;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use ts_rs::TS;
 use uuid::Uuid;

@@ -1,17 +1,12 @@
-use std::path::Path;
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use codex_login::login_with_api_key;
-use codex_protocol::mcp_protocol::CancelLoginChatGptParams;
-use codex_protocol::mcp_protocol::CancelLoginChatGptResponse;
-use codex_protocol::mcp_protocol::GetAuthStatusParams;
-use codex_protocol::mcp_protocol::GetAuthStatusResponse;
-use codex_protocol::mcp_protocol::LoginChatGptResponse;
-use codex_protocol::mcp_protocol::LogoutChatGptResponse;
-use mcp_test_support::McpProcess;
-use mcp_test_support::to_response;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use codex_protocol::mcp_protocol::{
+    CancelLoginChatGptParams, CancelLoginChatGptResponse, GetAuthStatusParams,
+    GetAuthStatusResponse, LoginChatGptResponse, LogoutChatGptResponse,
+};
+use mcp_test_support::{McpProcess, to_response};
+use mcp_types::{JSONRPCResponse, RequestId};
 use tempfile::TempDir;
 use tokio::time::timeout;
 

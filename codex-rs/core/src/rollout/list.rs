@@ -1,22 +1,22 @@
-use std::cmp::Reverse;
-use std::io::{self};
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    cmp::Reverse,
+    io::{self},
+    path::{Path, PathBuf},
+};
 
 use codex_file_search as file_search;
-use std::num::NonZero;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use time::OffsetDateTime;
-use time::PrimitiveDateTime;
-use time::format_description::FormatItem;
-use time::macros::format_description;
+use std::{
+    num::NonZero,
+    sync::{Arc, atomic::AtomicBool},
+};
+use time::{
+    OffsetDateTime, PrimitiveDateTime, format_description::FormatItem, macros::format_description,
+};
 use uuid::Uuid;
 
 use super::SESSIONS_SUBDIR;
 use crate::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_protocol::protocol::{RolloutItem, RolloutLine};
 
 /// Returned page of conversation summaries.
 #[derive(Debug, Default, PartialEq)]

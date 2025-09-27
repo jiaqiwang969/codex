@@ -1,15 +1,17 @@
-use std::sync::OnceLock;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 
-use ratatui::style::Color;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::text::Span;
+use ratatui::{
+    style::{Color, Modifier, Style},
+    text::Span,
+};
 
-use crate::color::blend;
-use crate::terminal_palette::default_fg;
-use crate::terminal_palette::terminal_palette;
+use crate::{
+    color::blend,
+    terminal_palette::{default_fg, terminal_palette},
+};
 
 const FALLBACK_DARK_GRAY: (u8, u8, u8) = (103, 103, 103);
 

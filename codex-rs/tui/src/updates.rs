@@ -1,15 +1,10 @@
 #![cfg(any(not(debug_assertions), test))]
 
-use chrono::DateTime;
-use chrono::Duration;
-use chrono::Utc;
-use serde::Deserialize;
-use serde::Serialize;
-use std::path::Path;
-use std::path::PathBuf;
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
-use codex_core::config::Config;
-use codex_core::default_client::create_client;
+use codex_core::{config::Config, default_client::create_client};
 
 use crate::version::CODEX_CLI_VERSION;
 

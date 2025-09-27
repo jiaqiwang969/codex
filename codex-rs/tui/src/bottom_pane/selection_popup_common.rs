@@ -1,15 +1,11 @@
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::{buffer::Buffer, layout::Rect};
 // Note: Table-based layout previously used Constraint; the manual renderer
 // below no longer requires it.
-use ratatui::style::Color;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Widget;
+use ratatui::{
+    style::{Color, Modifier, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Paragraph, Widget},
+};
 use unicode_width::UnicodeWidthChar;
 
 use super::scroll_state::ScrollState;
@@ -120,9 +116,7 @@ pub(crate) fn render_rows(
     include_border: bool,
 ) {
     if include_border {
-        use ratatui::widgets::Block;
-        use ratatui::widgets::BorderType;
-        use ratatui::widgets::Borders;
+        use ratatui::widgets::{Block, BorderType, Borders};
 
         // Always draw a dim left border to match other popups.
         let block = Block::default()
@@ -228,8 +222,7 @@ pub(crate) fn render_rows(
         );
 
         // Wrap with subsequent indent aligned to the description column.
-        use crate::wrapping::RtOptions;
-        use crate::wrapping::word_wrap_line;
+        use crate::wrapping::{RtOptions, word_wrap_line};
         let options = RtOptions::new(content_area.width as usize)
             .initial_indent(Line::from(""))
             .subsequent_indent(Line::from(" ".repeat(desc_col)));
@@ -292,8 +285,7 @@ pub(crate) fn measure_rows_height(
 
     let desc_col = compute_desc_col(rows_all, start_idx, visible_items, content_width);
 
-    use crate::wrapping::RtOptions;
-    use crate::wrapping::word_wrap_line;
+    use crate::wrapping::{RtOptions, word_wrap_line};
     let mut total: u16 = 0;
     for row in rows_all
         .iter()

@@ -1,55 +1,42 @@
-use std::io::BufRead;
-use std::path::Path;
-use std::sync::OnceLock;
-use std::time::Duration;
+use std::{io::BufRead, path::Path, sync::OnceLock, time::Duration};
 
-use crate::AuthManager;
-use crate::auth::CodexAuth;
+use crate::{AuthManager, auth::CodexAuth};
 use bytes::Bytes;
-use codex_protocol::mcp_protocol::AuthMode;
-use codex_protocol::mcp_protocol::ConversationId;
+use codex_protocol::mcp_protocol::{AuthMode, ConversationId};
 use eventsource_stream::Eventsource;
 use futures::prelude::*;
 use regex_lite::Regex;
-use reqwest::StatusCode;
-use reqwest::header::HeaderMap;
-use serde::Deserialize;
-use serde::Serialize;
+use reqwest::{StatusCode, header::HeaderMap};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
-use tokio::time::timeout;
+use tokio::{sync::mpsc, time::timeout};
 use tokio_util::io::ReaderStream;
-use tracing::debug;
-use tracing::trace;
-use tracing::warn;
+use tracing::{debug, trace, warn};
 
-use crate::chat_completions::AggregateStreamExt;
-use crate::chat_completions::stream_chat_completions;
-use crate::client_common::Prompt;
-use crate::client_common::ResponseEvent;
-use crate::client_common::ResponseStream;
-use crate::client_common::ResponsesApiRequest;
-use crate::client_common::create_reasoning_param_for_request;
-use crate::client_common::create_text_param_for_request;
-use crate::config::Config;
-use crate::default_client::create_client;
-use crate::error::CodexErr;
-use crate::error::Result;
-use crate::error::UsageLimitReachedError;
-use crate::flags::CODEX_RS_SSE_FIXTURE;
-use crate::model_family::ModelFamily;
-use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::WireApi;
-use crate::openai_model_info::get_model_info;
-use crate::openai_tools::create_tools_json_for_responses_api;
-use crate::protocol::RateLimitSnapshot;
-use crate::protocol::RateLimitWindow;
-use crate::protocol::TokenUsage;
-use crate::token_data::PlanType;
-use crate::util::backoff;
-use codex_protocol::config_types::ReasoningEffort as ReasoningEffortConfig;
-use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use codex_protocol::models::ResponseItem;
+use crate::{
+    chat_completions::{AggregateStreamExt, stream_chat_completions},
+    client_common::{
+        Prompt, ResponseEvent, ResponseStream, ResponsesApiRequest,
+        create_reasoning_param_for_request, create_text_param_for_request,
+    },
+    config::Config,
+    default_client::create_client,
+    error::{CodexErr, Result, UsageLimitReachedError},
+    flags::CODEX_RS_SSE_FIXTURE,
+    model_family::ModelFamily,
+    model_provider_info::{ModelProviderInfo, WireApi},
+    openai_model_info::get_model_info,
+    openai_tools::create_tools_json_for_responses_api,
+    protocol::{RateLimitSnapshot, RateLimitWindow, TokenUsage},
+    token_data::PlanType,
+    util::backoff,
+};
+use codex_protocol::{
+    config_types::{
+        ReasoningEffort as ReasoningEffortConfig, ReasoningSummary as ReasoningSummaryConfig,
+    },
+    models::ResponseItem,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -1217,8 +1204,7 @@ mod tests {
 
     #[test]
     fn error_response_deserializes_old_schema_known_plan_type_and_serializes_back() {
-        use crate::token_data::KnownPlan;
-        use crate::token_data::PlanType;
+        use crate::token_data::{KnownPlan, PlanType};
 
         let json = r#"{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_in_seconds":3600}}"#;
         let resp: ErrorResponse =

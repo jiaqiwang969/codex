@@ -1,7 +1,6 @@
 use crate::spawn::CODEX_SANDBOX_ENV_VAR;
 use reqwest::header::HeaderValue;
-use std::sync::LazyLock;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Set this to add a suffix to the User-Agent string.
 ///
@@ -142,11 +141,10 @@ mod tests {
     async fn test_create_client_sets_default_headers() {
         skip_if_no_network!();
 
-        use wiremock::Mock;
-        use wiremock::MockServer;
-        use wiremock::ResponseTemplate;
-        use wiremock::matchers::method;
-        use wiremock::matchers::path;
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
 
         let client = create_client();
 

@@ -2,23 +2,17 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::Op;
-use core_test_support::responses;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
+use codex_core::protocol::{EventMsg, InputItem, Op};
+use core_test_support::{
+    responses, skip_if_no_network,
+    test_codex::{TestCodex, test_codex},
+    wait_for_event,
+};
 use tempfile::TempDir;
 use wiremock::matchers::any;
 
-use responses::ev_assistant_message;
-use responses::ev_completed;
-use responses::sse;
-use responses::start_mock_server;
-use tokio::time::Duration;
-use tokio::time::sleep;
+use responses::{ev_assistant_message, ev_completed, sse, start_mock_server};
+use tokio::time::{Duration, sleep};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn summarize_context_three_requests_and_instructions() -> anyhow::Result<()> {

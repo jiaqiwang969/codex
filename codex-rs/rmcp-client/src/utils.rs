@@ -1,13 +1,8 @@
-use std::collections::HashMap;
-use std::env;
-use std::time::Duration;
+use std::{collections::HashMap, env, time::Duration};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Context, Result, anyhow};
 use mcp_types::CallToolResult;
-use rmcp::model::CallToolResult as RmcpCallToolResult;
-use rmcp::service::ServiceError;
+use rmcp::{model::CallToolResult as RmcpCallToolResult, service::ServiceError};
 use serde_json::Value;
 use tokio::time;
 

@@ -1,25 +1,19 @@
-use chrono::DateTime;
-use chrono::Utc;
-use serde::Deserialize;
-use serde::Serialize;
-use std::env;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::io::Write;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::{
+    env,
+    fs::{File, OpenOptions},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use codex_protocol::mcp_protocol::AuthMode;
 
-use crate::token_data::PlanType;
-use crate::token_data::TokenData;
-use crate::token_data::parse_id_token;
+use crate::token_data::{PlanType, TokenData, parse_id_token};
 
 #[derive(Debug, Clone)]
 pub struct CodexAuth {
@@ -380,9 +374,7 @@ struct CachedAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::token_data::IdTokenInfo;
-    use crate::token_data::KnownPlan;
-    use crate::token_data::PlanType;
+    use crate::token_data::{IdTokenInfo, KnownPlan, PlanType};
     use base64::Engine;
     use pretty_assertions::assert_eq;
     use serde::Serialize;

@@ -1,16 +1,12 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use codex_core::config::Config;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::SessionConfiguredEvent;
-use codex_core::protocol::TaskCompleteEvent;
+use codex_core::{
+    config::Config,
+    protocol::{Event, EventMsg, SessionConfiguredEvent, TaskCompleteEvent},
+};
 use serde_json::json;
 
-use crate::event_processor::CodexStatus;
-use crate::event_processor::EventProcessor;
-use crate::event_processor::handle_last_message;
+use crate::event_processor::{CodexStatus, EventProcessor, handle_last_message};
 use codex_common::create_config_summary_entries;
 
 pub(crate) struct EventProcessorWithJsonOutput {

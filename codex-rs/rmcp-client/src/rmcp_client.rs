@@ -1,42 +1,36 @@
-use std::collections::HashMap;
-use std::ffi::OsString;
-use std::io;
-use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{collections::HashMap, ffi::OsString, io, process::Stdio, sync::Arc, time::Duration};
 
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use futures::FutureExt;
-use mcp_types::CallToolRequestParams;
-use mcp_types::CallToolResult;
-use mcp_types::InitializeRequestParams;
-use mcp_types::InitializeResult;
-use mcp_types::ListToolsRequestParams;
-use mcp_types::ListToolsResult;
-use rmcp::model::CallToolRequestParam;
-use rmcp::model::InitializeRequestParam;
-use rmcp::model::PaginatedRequestParam;
-use rmcp::service::RoleClient;
-use rmcp::service::RunningService;
-use rmcp::service::{self};
-use rmcp::transport::StreamableHttpClientTransport;
-use rmcp::transport::child_process::TokioChildProcess;
-use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
-use tokio::process::Command;
-use tokio::sync::Mutex;
-use tokio::time;
-use tracing::info;
-use tracing::warn;
+use mcp_types::{
+    CallToolRequestParams, CallToolResult, InitializeRequestParams, InitializeResult,
+    ListToolsRequestParams, ListToolsResult,
+};
+use rmcp::{
+    model::{CallToolRequestParam, InitializeRequestParam, PaginatedRequestParam},
+    service::{
+        RoleClient, RunningService, {self},
+    },
+    transport::{
+        StreamableHttpClientTransport, child_process::TokioChildProcess,
+        streamable_http_client::StreamableHttpClientTransportConfig,
+    },
+};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+    sync::Mutex,
+    time,
+};
+use tracing::{info, warn};
 
-use crate::logging_client_handler::LoggingClientHandler;
-use crate::utils::convert_call_tool_result;
-use crate::utils::convert_to_mcp;
-use crate::utils::convert_to_rmcp;
-use crate::utils::create_env_for_mcp_server;
-use crate::utils::run_with_timeout;
+use crate::{
+    logging_client_handler::LoggingClientHandler,
+    utils::{
+        convert_call_tool_result, convert_to_mcp, convert_to_rmcp, create_env_for_mcp_server,
+        run_with_timeout,
+    },
+};
 
 enum PendingTransport {
     ChildProcess(TokioChildProcess),

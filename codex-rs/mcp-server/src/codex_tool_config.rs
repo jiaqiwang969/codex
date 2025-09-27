@@ -2,14 +2,10 @@
 
 use codex_core::protocol::AskForApproval;
 use codex_protocol::config_types::SandboxMode;
-use mcp_types::Tool;
-use mcp_types::ToolInputSchema;
-use schemars::JsonSchema;
-use schemars::r#gen::SchemaSettings;
-use serde::Deserialize;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use mcp_types::{Tool, ToolInputSchema};
+use schemars::{JsonSchema, r#gen::SchemaSettings};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::json_to_toml::json_to_toml;
 

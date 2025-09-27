@@ -1,14 +1,9 @@
-use std::mem::swap;
-use std::sync::Arc;
+use std::{mem::swap, sync::Arc};
 
-use codex_core::CodexAuth;
-use codex_core::CodexConversation;
-use codex_core::ConversationManager;
-use codex_core::ModelProviderInfo;
-use codex_core::NewConversation;
-use codex_core::built_in_model_providers;
-use codex_core::config::Config;
-use codex_core::protocol::SessionConfiguredEvent;
+use codex_core::{
+    CodexAuth, CodexConversation, ConversationManager, ModelProviderInfo, NewConversation,
+    built_in_model_providers, config::Config, protocol::SessionConfiguredEvent,
+};
 use tempfile::TempDir;
 
 use crate::load_default_config_for_test;

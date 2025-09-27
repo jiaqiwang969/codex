@@ -2,9 +2,7 @@
 #![expect(clippy::expect_used)]
 
 use crate::test_backend::VT100Backend;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
+use ratatui::{layout::Rect, style::Stylize, text::Line};
 
 // Small helper macro to assert a collection contains an item with a clearer
 // failure message.

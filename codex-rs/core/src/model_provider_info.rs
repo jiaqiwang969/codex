@@ -7,11 +7,8 @@
 
 use crate::CodexAuth;
 use codex_protocol::mcp_protocol::AuthMode;
-use serde::Deserialize;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::env::VarError;
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, env::VarError, time::Duration};
 
 use crate::error::EnvVarError;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;

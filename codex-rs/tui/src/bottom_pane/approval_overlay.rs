@@ -1,27 +1,24 @@
 use std::path::PathBuf;
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::BottomPaneView;
-use crate::bottom_pane::CancellationEvent;
-use crate::bottom_pane::list_selection_view::HeaderLine;
-use crate::bottom_pane::list_selection_view::ListSelectionView;
-use crate::bottom_pane::list_selection_view::SelectionItem;
-use crate::bottom_pane::list_selection_view::SelectionViewParams;
-use crate::exec_command::strip_bash_lc_and_escape;
-use crate::history_cell;
-use crate::text_formatting::truncate_text;
-use codex_core::protocol::Op;
-use codex_core::protocol::ReviewDecision;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
+use crate::{
+    app_event::AppEvent,
+    app_event_sender::AppEventSender,
+    bottom_pane::{
+        BottomPaneView, CancellationEvent,
+        list_selection_view::{HeaderLine, ListSelectionView, SelectionItem, SelectionViewParams},
+    },
+    exec_command::strip_bash_lc_and_escape,
+    history_cell,
+    text_formatting::truncate_text,
+};
+use codex_core::protocol::{Op, ReviewDecision};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    text::{Line, Span},
+};
 
 /// Request coming from the agent that needs user approval.
 pub(crate) enum ApprovalRequest {

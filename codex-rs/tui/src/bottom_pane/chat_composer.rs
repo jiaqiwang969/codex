@@ -1,53 +1,42 @@
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
-use ratatui::layout::Margin;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::widgets::Block;
-use ratatui::widgets::StatefulWidgetRef;
-use ratatui::widgets::WidgetRef;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Margin, Rect},
+    style::Stylize,
+    text::{Line, Span},
+    widgets::{Block, StatefulWidgetRef, WidgetRef},
+};
 
-use super::chat_composer_history::ChatComposerHistory;
-use super::command_popup::CommandItem;
-use super::command_popup::CommandPopup;
-use super::file_search_popup::FileSearchPopup;
-use super::footer::FooterMode;
-use super::footer::FooterProps;
-use super::footer::esc_hint_mode;
-use super::footer::footer_height;
-use super::footer::prompt_mode;
-use super::footer::render_footer;
-use super::footer::reset_mode_after_activity;
-use super::footer::toggle_shortcut_mode;
-use super::paste_burst::CharDecision;
-use super::paste_burst::PasteBurst;
-use crate::bottom_pane::paste_burst::FlushResult;
-use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
-use crate::terminal_palette;
+use super::{
+    chat_composer_history::ChatComposerHistory,
+    command_popup::{CommandItem, CommandPopup},
+    file_search_popup::FileSearchPopup,
+    footer::{
+        FooterMode, FooterProps, esc_hint_mode, footer_height, prompt_mode, render_footer,
+        reset_mode_after_activity, toggle_shortcut_mode,
+    },
+    paste_burst::{CharDecision, PasteBurst},
+};
+use crate::{
+    bottom_pane::paste_burst::FlushResult, slash_command::SlashCommand, style::user_message_style,
+    terminal_palette,
+};
 use codex_protocol::custom_prompts::CustomPrompt;
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::textarea::TextArea;
-use crate::bottom_pane::textarea::TextAreaState;
-use crate::clipboard_paste::normalize_pasted_path;
-use crate::clipboard_paste::pasted_image_format;
-use crate::ui_consts::LIVE_PREFIX_COLS;
+use crate::{
+    app_event::AppEvent,
+    app_event_sender::AppEventSender,
+    bottom_pane::textarea::{TextArea, TextAreaState},
+    clipboard_paste::{normalize_pasted_path, pasted_image_format},
+    ui_consts::LIVE_PREFIX_COLS,
+};
 use codex_file_search::FileMatch;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 /// If the pasted content exceeds this number of characters, replace it with a
 /// placeholder in the UI.
@@ -1405,20 +1394,20 @@ impl WidgetRef for ChatComposer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::ImageBuffer;
-    use image::Rgba;
+    use image::{ImageBuffer, Rgba};
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
-    use crate::app_event::AppEvent;
-    use crate::bottom_pane::AppEventSender;
-    use crate::bottom_pane::ChatComposer;
-    use crate::bottom_pane::InputResult;
-    use crate::bottom_pane::chat_composer::AttachedImage;
-    use crate::bottom_pane::chat_composer::LARGE_PASTE_CHAR_THRESHOLD;
-    use crate::bottom_pane::footer::footer_height;
-    use crate::bottom_pane::textarea::TextArea;
+    use crate::{
+        app_event::AppEvent,
+        bottom_pane::{
+            AppEventSender, ChatComposer, InputResult,
+            chat_composer::{AttachedImage, LARGE_PASTE_CHAR_THRESHOLD},
+            footer::footer_height,
+            textarea::TextArea,
+        },
+    };
     use tokio::sync::mpsc::unbounded_channel;
 
     #[test]
@@ -1479,8 +1468,7 @@ mod tests {
     where
         F: FnOnce(&mut ChatComposer),
     {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
+        use ratatui::{Terminal, backend::TestBackend};
 
         let width = 100;
         let (tx, _rx) = unbounded_channel::<AppEvent>();
@@ -1504,9 +1492,7 @@ mod tests {
 
     #[test]
     fn footer_mode_snapshots() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         snapshot_composer_state("footer_mode_shortcut_overlay", true, |composer| {
             composer.set_esc_backtrack_hint(true);
@@ -1701,9 +1687,7 @@ mod tests {
 
     #[test]
     fn handle_paste_small_inserts_text() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1730,9 +1714,7 @@ mod tests {
 
     #[test]
     fn empty_enter_returns_none() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1757,9 +1739,7 @@ mod tests {
 
     #[test]
     fn handle_paste_large_uses_placeholder_and_replaces_on_submit() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1791,9 +1771,7 @@ mod tests {
 
     #[test]
     fn edit_clears_pending_paste() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let large = "y".repeat(LARGE_PASTE_CHAR_THRESHOLD + 1);
         let (tx, _rx) = unbounded_channel::<AppEvent>();
@@ -1816,11 +1794,8 @@ mod tests {
 
     #[test]
     fn ui_snapshots() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::{Terminal, backend::TestBackend};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1876,8 +1851,7 @@ mod tests {
 
     #[test]
     fn slash_popup_model_first_for_mo_ui() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
+        use ratatui::{Terminal, backend::TestBackend};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1935,9 +1909,7 @@ mod tests {
 
     // Test helper: simulate human typing with a brief delay and flush the paste-burst buffer
     fn type_chars_humanlike(composer: &mut ChatComposer, chars: &[char]) {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         for &ch in chars {
             let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
             std::thread::sleep(ChatComposer::recommended_paste_flush_delay());
@@ -1947,9 +1919,7 @@ mod tests {
 
     #[test]
     fn slash_init_dispatches_command_and_does_not_submit_literal_text() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -1984,9 +1954,7 @@ mod tests {
 
     #[test]
     fn slash_tab_completion_moves_cursor_to_end() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2009,9 +1977,7 @@ mod tests {
 
     #[test]
     fn slash_mention_dispatches_command_and_inserts_at() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2044,9 +2010,7 @@ mod tests {
 
     #[test]
     fn test_multiple_pastes_submission() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2123,9 +2087,7 @@ mod tests {
 
     #[test]
     fn test_placeholder_deletion() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2195,9 +2157,7 @@ mod tests {
 
     #[test]
     fn test_partial_placeholder_deletion() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2333,9 +2293,7 @@ mod tests {
 
     #[test]
     fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2462,9 +2420,7 @@ mod tests {
 
     #[test]
     fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -2506,9 +2462,7 @@ mod tests {
 
     #[test]
     fn burst_paste_fast_large_inserts_placeholder_on_flush() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);

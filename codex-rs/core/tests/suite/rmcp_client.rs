@@ -1,29 +1,20 @@
-use std::collections::HashMap;
-use std::net::TcpListener;
-use std::time::Duration;
+use std::{collections::HashMap, net::TcpListener, time::Duration};
 
-use codex_core::config_types::McpServerConfig;
-use codex_core::config_types::McpServerTransportConfig;
+use codex_core::config_types::{McpServerConfig, McpServerTransportConfig};
 
-use codex_core::protocol::AskForApproval;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::Op;
-use codex_core::protocol::SandboxPolicy;
+use codex_core::protocol::{AskForApproval, EventMsg, InputItem, Op, SandboxPolicy};
 use codex_protocol::config_types::ReasoningSummary;
-use core_test_support::responses;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
-use core_test_support::wait_for_event_with_timeout;
+use core_test_support::{
+    responses, responses::mount_sse_once, skip_if_no_network, test_codex::test_codex,
+    wait_for_event, wait_for_event_with_timeout,
+};
 use escargot::CargoBuild;
 use serde_json::Value;
-use tokio::net::TcpStream;
-use tokio::process::Child;
-use tokio::process::Command;
-use tokio::time::Instant;
-use tokio::time::sleep;
+use tokio::{
+    net::TcpStream,
+    process::{Child, Command},
+    time::{Instant, sleep},
+};
 use wiremock::matchers::any;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

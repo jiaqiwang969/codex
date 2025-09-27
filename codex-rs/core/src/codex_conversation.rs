@@ -1,8 +1,8 @@
-use crate::codex::Codex;
-use crate::error::Result as CodexResult;
-use crate::protocol::Event;
-use crate::protocol::Op;
-use crate::protocol::Submission;
+use crate::{
+    codex::Codex,
+    error::Result as CodexResult,
+    protocol::{Event, Op, Submission},
+};
 
 pub struct CodexConversation {
     codex: Codex,

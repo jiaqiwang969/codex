@@ -1,26 +1,26 @@
-use std::collections::HashMap;
-use std::io::ErrorKind;
-use std::io::Read;
-use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU32;
+use std::{
+    collections::HashMap,
+    io::{ErrorKind, Read},
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicU32},
+    },
+};
 
-use portable_pty::CommandBuilder;
-use portable_pty::PtySize;
-use portable_pty::native_pty_system;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tokio::time::Duration;
-use tokio::time::Instant;
-use tokio::time::timeout;
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use tokio::{
+    sync::{Mutex, mpsc, oneshot},
+    time::{Duration, Instant, timeout},
+};
 
-use crate::exec_command::exec_command_params::ExecCommandParams;
-use crate::exec_command::exec_command_params::WriteStdinParams;
-use crate::exec_command::exec_command_session::ExecCommandSession;
-use crate::exec_command::session_id::SessionId;
-use crate::truncate::truncate_middle;
+use crate::{
+    exec_command::{
+        exec_command_params::{ExecCommandParams, WriteStdinParams},
+        exec_command_session::ExecCommandSession,
+        session_id::SessionId,
+    },
+    truncate::truncate_middle,
+};
 
 #[derive(Debug, Default)]
 pub struct SessionManager {
@@ -353,8 +353,7 @@ mod tests {
     #[allow(clippy::print_stderr)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn session_manager_streams_and_truncates_from_now() {
-        use crate::exec_command::exec_command_params::ExecCommandParams;
-        use crate::exec_command::exec_command_params::WriteStdinParams;
+        use crate::exec_command::exec_command_params::{ExecCommandParams, WriteStdinParams};
         use tokio::time::sleep;
 
         let session_manager = SessionManager::default();

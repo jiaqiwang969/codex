@@ -1,19 +1,10 @@
 use crate::citation_regex::CITATION_REGEX;
-use pulldown_cmark::CodeBlockKind;
-use pulldown_cmark::CowStr;
-use pulldown_cmark::Event;
-use pulldown_cmark::HeadingLevel;
-use pulldown_cmark::Options;
-use pulldown_cmark::Parser;
-use pulldown_cmark::Tag;
-use pulldown_cmark::TagEnd;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::text::Text;
-use std::borrow::Cow;
-use std::path::Path;
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use ratatui::{
+    style::{Style, Stylize},
+    text::{Line, Span, Text},
+};
+use std::{borrow::Cow, path::Path};
 
 #[derive(Clone, Debug)]
 struct IndentContext {

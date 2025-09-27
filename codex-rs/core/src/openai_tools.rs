@@ -1,15 +1,14 @@
-use serde::Deserialize;
-use serde::Serialize;
-use serde_json::Value as JsonValue;
-use serde_json::json;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value as JsonValue, json};
+use std::collections::{BTreeMap, HashMap};
 
-use crate::model_family::ModelFamily;
-use crate::plan_tool::PLAN_TOOL;
-use crate::tool_apply_patch::ApplyPatchToolType;
-use crate::tool_apply_patch::create_apply_patch_freeform_tool;
-use crate::tool_apply_patch::create_apply_patch_json_tool;
+use crate::{
+    model_family::ModelFamily,
+    plan_tool::PLAN_TOOL,
+    tool_apply_patch::{
+        ApplyPatchToolType, create_apply_patch_freeform_tool, create_apply_patch_json_tool,
+    },
+};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ResponsesApiTool {

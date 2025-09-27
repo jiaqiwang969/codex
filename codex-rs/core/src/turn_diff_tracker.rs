@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Context, Result, anyhow};
 use sha1::digest::Output;
 use uuid::Uuid;
 

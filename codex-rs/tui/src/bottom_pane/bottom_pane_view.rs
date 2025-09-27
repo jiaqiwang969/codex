@@ -1,7 +1,6 @@
 use crate::bottom_pane::ApprovalRequest;
 use crossterm::event::KeyEvent;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::{buffer::Buffer, layout::Rect};
 
 use super::CancellationEvent;
 

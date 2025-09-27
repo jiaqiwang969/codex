@@ -1,20 +1,17 @@
-use crate::ascii_animation::AsciiAnimation;
-use crate::tui::FrameRequester;
-use crate::tui::Tui;
-use crate::tui::TuiEvent;
+use crate::{
+    ascii_animation::AsciiAnimation,
+    tui::{FrameRequester, Tui, TuiEvent},
+};
 use color_eyre::eyre::Result;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::prelude::Widget;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    prelude::Widget,
+    style::Stylize,
+    text::Line,
+    widgets::{Clear, Paragraph, WidgetRef, Wrap},
+};
 use tokio_stream::StreamExt;
 
 const MIN_ANIMATION_HEIGHT: u16 = 24;

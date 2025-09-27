@@ -1,42 +1,30 @@
 #![allow(clippy::unwrap_used)]
 
-use codex_core::AuthManager;
-use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
-use codex_core::auth::read_openai_api_key_from_env;
-use codex_login::ServerOptions;
-use codex_login::ShutdownHandle;
-use codex_login::run_login_server;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
-use ratatui::layout::Rect;
-use ratatui::prelude::Widget;
-use ratatui::style::Color;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
-use ratatui::widgets::Borders;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
+use codex_core::{
+    AuthManager,
+    auth::{CLIENT_ID, login_with_api_key, read_openai_api_key_from_env},
+};
+use codex_login::{ServerOptions, ShutdownHandle, run_login_server};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    prelude::Widget,
+    style::{Color, Modifier, Style, Stylize},
+    text::Line,
+    widgets::{Block, BorderType, Borders, Paragraph, WidgetRef, Wrap},
+};
 
 use codex_protocol::mcp_protocol::AuthMode;
 use std::sync::RwLock;
 
-use crate::LoginStatus;
-use crate::onboarding::onboarding_screen::KeyboardHandler;
-use crate::onboarding::onboarding_screen::StepStateProvider;
-use crate::shimmer::shimmer_spans;
-use crate::tui::FrameRequester;
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::{
+    LoginStatus,
+    onboarding::onboarding_screen::{KeyboardHandler, StepStateProvider},
+    shimmer::shimmer_spans,
+    tui::FrameRequester,
+};
+use std::{path::PathBuf, sync::Arc};
 
 use super::onboarding_screen::StepState;
 

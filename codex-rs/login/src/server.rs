@@ -1,30 +1,25 @@
-use std::io::Cursor;
-use std::io::Read;
-use std::io::Write;
-use std::io::{self};
-use std::net::SocketAddr;
-use std::net::TcpStream;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+use std::{
+    io::{
+        Cursor, Read, Write, {self},
+    },
+    net::{SocketAddr, TcpStream},
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+    time::Duration,
+};
 
-use crate::pkce::PkceCodes;
-use crate::pkce::generate_pkce;
+use crate::pkce::{PkceCodes, generate_pkce};
 use base64::Engine;
 use chrono::Utc;
-use codex_core::auth::AuthDotJson;
-use codex_core::auth::get_auth_file;
-use codex_core::default_client::ORIGINATOR;
-use codex_core::token_data::TokenData;
-use codex_core::token_data::parse_id_token;
+use codex_core::{
+    auth::{AuthDotJson, get_auth_file},
+    default_client::ORIGINATOR,
+    token_data::{TokenData, parse_id_token},
+};
 use rand::RngCore;
 use serde_json::Value as JsonValue;
-use tiny_http::Header;
-use tiny_http::Request;
-use tiny_http::Response;
-use tiny_http::Server;
+use tiny_http::{Header, Request, Response, Server};
 
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
 const DEFAULT_PORT: u16 = 1455;

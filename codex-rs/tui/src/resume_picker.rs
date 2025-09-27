@@ -1,36 +1,29 @@
-use std::collections::HashSet;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use chrono::DateTime;
-use chrono::Utc;
-use codex_core::ConversationItem;
-use codex_core::ConversationsPage;
-use codex_core::Cursor;
-use codex_core::RolloutRecorder;
+use chrono::{DateTime, Utc};
+use codex_core::{ConversationItem, ConversationsPage, Cursor, RolloutRecorder};
 use color_eyre::eyre::Result;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use ratatui::layout::Constraint;
-use ratatui::layout::Layout;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize as _;
-use ratatui::text::Line;
-use ratatui::text::Span;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    layout::{Constraint, Layout, Rect},
+    style::Stylize as _,
+    text::{Line, Span},
+};
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
-use crate::text_formatting::truncate_text;
-use crate::tui::FrameRequester;
-use crate::tui::Tui;
-use crate::tui::TuiEvent;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::InputMessageKind;
-use codex_protocol::protocol::USER_MESSAGE_BEGIN;
+use crate::{
+    text_formatting::truncate_text,
+    tui::{FrameRequester, Tui, TuiEvent},
+};
+use codex_protocol::{
+    models::{ContentItem, ResponseItem},
+    protocol::{InputMessageKind, USER_MESSAGE_BEGIN},
+};
 
 const PAGE_SIZE: usize = 25;
 const LOAD_NEAR_THRESHOLD: usize = 5;
@@ -778,13 +771,12 @@ fn human_time_ago(ts: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyCode;
-    use crossterm::event::KeyEvent;
-    use crossterm::event::KeyModifiers;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use serde_json::json;
-    use std::future::Future;
-    use std::sync::Arc;
-    use std::sync::Mutex;
+    use std::{
+        future::Future,
+        sync::{Arc, Mutex},
+    };
 
     fn head_with_ts_and_user_text(ts: &str, texts: &[&str]) -> Vec<serde_json::Value> {
         vec![

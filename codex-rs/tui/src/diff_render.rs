@@ -1,18 +1,15 @@
 use diffy::Hunk;
-use ratatui::style::Color;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Line as RtLine;
-use ratatui::text::Span as RtSpan;
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
+use ratatui::{
+    style::{Color, Modifier, Style, Stylize},
+    text::{Line as RtLine, Span as RtSpan},
+};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use crate::exec_command::relativize_to_home;
-use crate::history_cell::PatchEventType;
-use codex_core::git_info::get_git_repo_root;
-use codex_core::protocol::FileChange;
+use crate::{exec_command::relativize_to_home, history_cell::PatchEventType};
+use codex_core::{git_info::get_git_repo_root, protocol::FileChange};
 
 const SPACES_AFTER_LINE_NUMBER: usize = 6;
 
@@ -379,12 +376,12 @@ fn style_del() -> Style {
 mod tests {
     use super::*;
     use insta::assert_snapshot;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    use ratatui::text::Text;
-    use ratatui::widgets::Paragraph;
-    use ratatui::widgets::WidgetRef;
-    use ratatui::widgets::Wrap;
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        text::Text,
+        widgets::{Paragraph, WidgetRef, Wrap},
+    };
     fn diff_summary_for_tests(
         changes: &HashMap<PathBuf, FileChange>,
         event_type: PatchEventType,

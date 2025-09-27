@@ -1,43 +1,22 @@
-use codex_common::elapsed::format_duration;
-use codex_common::elapsed::format_elapsed;
-use codex_core::config::Config;
-use codex_core::plan_tool::UpdatePlanArgs;
-use codex_core::protocol::AgentMessageDeltaEvent;
-use codex_core::protocol::AgentMessageEvent;
-use codex_core::protocol::AgentReasoningDeltaEvent;
-use codex_core::protocol::AgentReasoningRawContentDeltaEvent;
-use codex_core::protocol::AgentReasoningRawContentEvent;
-use codex_core::protocol::BackgroundEventEvent;
-use codex_core::protocol::ErrorEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecCommandBeginEvent;
-use codex_core::protocol::ExecCommandEndEvent;
-use codex_core::protocol::FileChange;
-use codex_core::protocol::McpInvocation;
-use codex_core::protocol::McpToolCallBeginEvent;
-use codex_core::protocol::McpToolCallEndEvent;
-use codex_core::protocol::PatchApplyBeginEvent;
-use codex_core::protocol::PatchApplyEndEvent;
-use codex_core::protocol::SessionConfiguredEvent;
-use codex_core::protocol::StreamErrorEvent;
-use codex_core::protocol::TaskCompleteEvent;
-use codex_core::protocol::TurnAbortReason;
-use codex_core::protocol::TurnDiffEvent;
-use codex_core::protocol::WebSearchBeginEvent;
-use codex_core::protocol::WebSearchEndEvent;
+use codex_common::elapsed::{format_duration, format_elapsed};
+use codex_core::{
+    config::Config,
+    plan_tool::UpdatePlanArgs,
+    protocol::{
+        AgentMessageDeltaEvent, AgentMessageEvent, AgentReasoningDeltaEvent,
+        AgentReasoningRawContentDeltaEvent, AgentReasoningRawContentEvent, BackgroundEventEvent,
+        ErrorEvent, Event, EventMsg, ExecCommandBeginEvent, ExecCommandEndEvent, FileChange,
+        McpInvocation, McpToolCallBeginEvent, McpToolCallEndEvent, PatchApplyBeginEvent,
+        PatchApplyEndEvent, SessionConfiguredEvent, StreamErrorEvent, TaskCompleteEvent,
+        TurnAbortReason, TurnDiffEvent, WebSearchBeginEvent, WebSearchEndEvent,
+    },
+};
 use codex_protocol::num_format::format_with_separators;
-use owo_colors::OwoColorize;
-use owo_colors::Style;
+use owo_colors::{OwoColorize, Style};
 use shlex::try_join;
-use std::collections::HashMap;
-use std::io::Write;
-use std::path::PathBuf;
-use std::time::Instant;
+use std::{collections::HashMap, io::Write, path::PathBuf, time::Instant};
 
-use crate::event_processor::CodexStatus;
-use crate::event_processor::EventProcessor;
-use crate::event_processor::handle_last_message;
+use crate::event_processor::{CodexStatus, EventProcessor, handle_last_message};
 use codex_common::create_config_summary_entries;
 
 /// This should be configurable. When used in CI, users may not want to impose

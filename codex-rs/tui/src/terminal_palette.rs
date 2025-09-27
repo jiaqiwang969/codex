@@ -25,9 +25,7 @@ pub fn default_bg() -> Option<(u8, u8, u8)> {
 #[cfg(all(unix, not(test)))]
 mod imp {
     use super::DefaultColors;
-    use std::mem::MaybeUninit;
-    use std::os::fd::RawFd;
-    use std::sync::OnceLock;
+    use std::{mem::MaybeUninit, os::fd::RawFd, sync::OnceLock};
 
     pub(super) fn terminal_palette() -> Option<[(u8, u8, u8); 256]> {
         static CACHE: OnceLock<Option<[(u8, u8, u8); 256]>> = OnceLock::new();
@@ -46,14 +44,12 @@ mod imp {
 
     #[allow(dead_code)]
     fn query_terminal_palette() -> std::io::Result<Option<[(u8, u8, u8); 256]>> {
-        use std::fs::OpenOptions;
-        use std::io::ErrorKind;
-        use std::io::IsTerminal;
-        use std::io::Read;
-        use std::io::Write;
-        use std::os::fd::AsRawFd;
-        use std::time::Duration;
-        use std::time::Instant;
+        use std::{
+            fs::OpenOptions,
+            io::{ErrorKind, IsTerminal, Read, Write},
+            os::fd::AsRawFd,
+            time::{Duration, Instant},
+        };
 
         if !std::io::stdout().is_terminal() {
             return Ok(None);
@@ -123,14 +119,12 @@ mod imp {
 
     #[allow(dead_code)]
     fn query_default_colors() -> std::io::Result<Option<DefaultColors>> {
-        use std::fs::OpenOptions;
-        use std::io::ErrorKind;
-        use std::io::IsTerminal;
-        use std::io::Read;
-        use std::io::Write;
-        use std::os::fd::AsRawFd;
-        use std::time::Duration;
-        use std::time::Instant;
+        use std::{
+            fs::OpenOptions,
+            io::{ErrorKind, IsTerminal, Read, Write},
+            os::fd::AsRawFd,
+            time::{Duration, Instant},
+        };
 
         let mut stdout_handle = std::io::stdout();
         if !stdout_handle.is_terminal() {
@@ -196,10 +190,10 @@ mod imp {
         buffer: &mut Vec<u8>,
         palette: &mut [Option<(u8, u8, u8)>; 256],
     ) -> usize {
-        use std::io::ErrorKind;
-        use std::io::Read;
-        use std::time::Duration;
-        use std::time::Instant;
+        use std::{
+            io::{ErrorKind, Read},
+            time::{Duration, Instant},
+        };
 
         let mut chunk = [0u8; 512];
         let mut idle_deadline = Instant::now() + Duration::from_millis(50);

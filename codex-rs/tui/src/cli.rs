@@ -1,6 +1,5 @@
 use clap::Parser;
-use codex_common::ApprovalModeCliArg;
-use codex_common::CliConfigOverrides;
+use codex_common::{ApprovalModeCliArg, CliConfigOverrides};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]

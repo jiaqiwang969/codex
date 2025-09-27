@@ -1,23 +1,22 @@
 //! Prototype MCP server.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
-use std::io::ErrorKind;
-use std::io::Result as IoResult;
-use std::path::PathBuf;
+use std::{
+    io::{ErrorKind, Result as IoResult},
+    path::PathBuf,
+};
 
 use codex_common::CliConfigOverrides;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
+use codex_core::config::{Config, ConfigOverrides};
 
 use mcp_types::JSONRPCMessage;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::io::{self};
-use tokio::sync::mpsc;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
+use tokio::{
+    io::{
+        AsyncBufReadExt, AsyncWriteExt, BufReader, {self},
+    },
+    sync::mpsc,
+};
+use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
 mod codex_message_processor;
@@ -30,16 +29,16 @@ pub(crate) mod message_processor;
 mod outgoing_message;
 mod patch_approval;
 
-use crate::message_processor::MessageProcessor;
-use crate::outgoing_message::OutgoingMessage;
-use crate::outgoing_message::OutgoingMessageSender;
+use crate::{
+    message_processor::MessageProcessor,
+    outgoing_message::{OutgoingMessage, OutgoingMessageSender},
+};
 
-pub use crate::codex_tool_config::CodexToolCallParam;
-pub use crate::codex_tool_config::CodexToolCallReplyParam;
-pub use crate::exec_approval::ExecApprovalElicitRequestParams;
-pub use crate::exec_approval::ExecApprovalResponse;
-pub use crate::patch_approval::PatchApprovalElicitRequestParams;
-pub use crate::patch_approval::PatchApprovalResponse;
+pub use crate::{
+    codex_tool_config::{CodexToolCallParam, CodexToolCallReplyParam},
+    exec_approval::{ExecApprovalElicitRequestParams, ExecApprovalResponse},
+    patch_approval::{PatchApprovalElicitRequestParams, PatchApprovalResponse},
+};
 
 /// Size of the bounded channels used to communicate between tasks. The value
 /// is a balance between throughput and memory usage – 128 messages should be

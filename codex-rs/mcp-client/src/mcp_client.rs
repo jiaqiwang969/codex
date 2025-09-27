@@ -11,46 +11,31 @@
 //! interact with the [`ModelContextProtocolRequest`] trait from `mcp-types` to
 //! issue requests and receive strongly-typed results.
 
-use std::collections::HashMap;
-use std::ffi::OsString;
-use std::sync::Arc;
-use std::sync::atomic::AtomicI64;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+    time::Duration,
+};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
-use mcp_types::CallToolRequest;
-use mcp_types::CallToolRequestParams;
-use mcp_types::InitializeRequest;
-use mcp_types::InitializeRequestParams;
-use mcp_types::InitializedNotification;
-use mcp_types::JSONRPC_VERSION;
-use mcp_types::JSONRPCMessage;
-use mcp_types::JSONRPCNotification;
-use mcp_types::JSONRPCRequest;
-use mcp_types::JSONRPCResponse;
-use mcp_types::ListToolsRequest;
-use mcp_types::ListToolsRequestParams;
-use mcp_types::ListToolsResult;
-use mcp_types::ModelContextProtocolNotification;
-use mcp_types::ModelContextProtocolRequest;
-use mcp_types::RequestId;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::process::Command;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tokio::time;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
+use anyhow::{Context, Result, anyhow};
+use mcp_types::{
+    CallToolRequest, CallToolRequestParams, InitializeRequest, InitializeRequestParams,
+    InitializedNotification, JSONRPC_VERSION, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest,
+    JSONRPCResponse, ListToolsRequest, ListToolsRequestParams, ListToolsResult,
+    ModelContextProtocolNotification, ModelContextProtocolRequest, RequestId,
+};
+use serde::{Serialize, de::DeserializeOwned};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::{Mutex, mpsc, oneshot},
+    time,
+};
+use tracing::{debug, error, info, warn};
 
 /// Capacity of the bounded channels used for transporting messages between the
 /// client API and the IO tasks.

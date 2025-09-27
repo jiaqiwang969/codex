@@ -1,27 +1,14 @@
-use std::io::Result;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{io::Result, sync::Arc, time::Duration};
 
-use crate::history_cell::HistoryCell;
-use crate::render::line_utils::push_owned_lines;
-use crate::tui;
-use crate::tui::TuiEvent;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::style::Styled;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::text::Text;
-use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Widget;
-use ratatui::widgets::WidgetRef;
+use crate::{history_cell::HistoryCell, render::line_utils::push_owned_lines, tui, tui::TuiEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Style, Styled, Stylize},
+    text::{Line, Span, Text},
+    widgets::{Clear, Paragraph, Widget, WidgetRef},
+};
 
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
@@ -35,6 +22,10 @@ impl Overlay {
 
     pub(crate) fn new_static_with_title(lines: Vec<Line<'static>>, title: String) -> Self {
         Self::Static(StaticOverlay::with_title(lines, title))
+    }
+
+    pub(crate) fn new_static_with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
+        Self::Static(StaticOverlay::with_title_no_wrap(lines, title))
     }
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
@@ -77,14 +68,33 @@ fn render_key_hints(area: Rect, buf: &mut Buffer, pairs: &[(&str, &str)]) {
 }
 
 /// Generic widget for rendering a pager view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WrapMode {
+    WordWrap,
+    NoWrap,
+}
+
 struct PagerView {
     texts: Vec<Text<'static>>,
     scroll_offset: usize,
+    /// Focused wrapped-line index (acts like a cursor).
+    cursor_idx: usize,
     title: String,
     wrap_cache: Option<WrapCache>,
     last_content_height: Option<usize>,
     /// If set, on next render ensure this chunk is visible.
     pending_scroll_chunk: Option<usize>,
+    // Vim-like navigation/search state
+    search_input: Option<String>,
+    last_search: Option<String>,
+    last_match_idx: Option<usize>,
+    g_pending: bool,
+    /// Wrapping behavior for rendering: soft wrap or no-wrap.
+    wrap_mode: WrapMode,
+    /// Horizontal scroll offset (columns) used when `wrap_mode` is NoWrap.
+    horiz_offset: usize,
+    /// Whether to render a left gutter with a cursor marker on the focused line.
+    show_cursor_gutter: bool,
 }
 
 impl PagerView {
@@ -92,10 +102,18 @@ impl PagerView {
         Self {
             texts,
             scroll_offset,
+            cursor_idx: 0,
             title,
             wrap_cache: None,
             last_content_height: None,
             pending_scroll_chunk: None,
+            search_input: None,
+            last_search: None,
+            last_match_idx: None,
+            g_pending: false,
+            wrap_mode: WrapMode::WordWrap,
+            horiz_offset: 0,
+            show_cursor_gutter: false,
         }
     }
 
@@ -122,12 +140,21 @@ impl PagerView {
         self.scroll_offset = self
             .scroll_offset
             .min(wrapped_len.saturating_sub(content_area.height as usize));
+        // Clamp cursor to valid range and ensure it's visible by adjusting scroll if needed.
+        if wrapped_len == 0 {
+            self.cursor_idx = 0;
+        } else {
+            if self.cursor_idx >= wrapped_len {
+                self.cursor_idx = wrapped_len - 1;
+            }
+            self.ensure_cursor_visible(content_area.height as usize);
+        }
         let start = self.scroll_offset;
         let end = (start + content_area.height as usize).min(wrapped_len);
 
         let wrapped = self.cached();
         let page = &wrapped[start..end];
-        self.render_content_page_prepared(content_area, buf, page);
+        self.render_content_page_prepared(content_area, buf, start, page);
         self.render_bottom_bar(area, content_area, buf, wrapped);
     }
 
@@ -141,9 +168,43 @@ impl PagerView {
 
     // Removed unused render_content_page (replaced by render_content_page_prepared)
 
-    fn render_content_page_prepared(&self, area: Rect, buf: &mut Buffer, page: &[Line<'static>]) {
+    fn render_content_page_prepared(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        page_start: usize,
+        page: &[Line<'static>],
+    ) {
         Clear.render(area, buf);
-        Paragraph::new(page.to_vec()).render_ref(area, buf);
+        // Horizontal clipping when in NoWrap mode, accounting for an optional left gutter.
+        let gutter_cols: u16 = if self.show_cursor_gutter { 2 } else { 0 };
+        let clipped: Vec<Line<'static>> = if self.wrap_mode == WrapMode::NoWrap {
+            let content_width = area.width.saturating_sub(gutter_cols).max(1) as usize;
+            page.iter()
+                .map(|l| self.clip_line(l, self.horiz_offset, content_width))
+                .collect()
+        } else {
+            page.to_vec()
+        };
+
+        // Optionally prefix a gutter marker ("▸ ") on the focused line; otherwise two spaces.
+        let lines: Vec<Line<'static>> = if self.show_cursor_gutter {
+            clipped
+                .into_iter()
+                .enumerate()
+                .map(|(i, mut l)| {
+                    let is_cursor = self.cursor_idx == page_start + i;
+                    let mut spans = Vec::with_capacity(l.spans.len() + 1);
+                    let pref = if is_cursor { "▸ " } else { "  " };
+                    spans.push(pref.into());
+                    spans.append(&mut l.spans);
+                    Line::from(spans).style(l.style)
+                })
+                .collect()
+        } else {
+            clipped
+        };
+        Paragraph::new(lines).render_ref(area, buf);
 
         let visible = page.len();
         if visible < area.height as usize {
@@ -187,55 +248,237 @@ impl PagerView {
         Span::from(pct_text)
             .dim()
             .render_ref(Rect::new(pct_x, sep_rect.y, pct_w, 1), buf);
+
+        // If in "/"-search entry mode, show the prompt on the left side.
+        if let Some(q) = &self.search_input {
+            let prompt = format!("/{}", q);
+            let max_w = sep_rect.width.saturating_sub(pct_w).saturating_sub(2);
+            let w = (prompt.chars().count() as u16).min(max_w);
+            if w > 0 {
+                Span::from(prompt)
+                    .cyan()
+                    .render_ref(Rect::new(sep_rect.x + 1, sep_rect.y, w, 1), buf);
+            }
+        }
     }
 
     fn handle_key_event(&mut self, tui: &mut tui::Tui, key_event: KeyEvent) -> Result<()> {
+        // Ensure wrapping exists for current viewport; required for search/jumps
+        let area = self.scroll_area(tui.terminal.viewport_area);
+        self.ensure_wrapped(area.width);
+
+        // If in search entry, handle input first
+        if let Some(buf) = &mut self.search_input {
+            match key_event {
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                    ..
+                } => {
+                    self.search_input = None;
+                    tui.frame_requester()
+                        .schedule_frame_in(Duration::from_millis(16));
+                    return Ok(());
+                }
+                KeyEvent {
+                    code: KeyCode::Enter,
+                    kind: KeyEventKind::Press,
+                    ..
+                } => {
+                    let q = buf.trim().to_string();
+                    self.search_input = None;
+                    if !q.is_empty() {
+                        self.last_search = Some(q.clone());
+                        let start = self.scroll_offset.min(self.cached().len());
+                        if let Some(idx) = self.find_next_match(&q, start) {
+                            self.cursor_idx = idx;
+                            self.center_on(idx, area.height as usize);
+                            self.last_match_idx = Some(idx);
+                        }
+                    }
+                    tui.frame_requester()
+                        .schedule_frame_in(Duration::from_millis(16));
+                    return Ok(());
+                }
+                KeyEvent {
+                    code: KeyCode::Backspace,
+                    kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                    ..
+                } => {
+                    buf.pop();
+                    tui.frame_requester()
+                        .schedule_frame_in(Duration::from_millis(16));
+                    return Ok(());
+                }
+                KeyEvent {
+                    code: KeyCode::Char(c),
+                    kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                    ..
+                } => {
+                    if !c.is_control() {
+                        buf.push(c);
+                        tui.frame_requester()
+                            .schedule_frame_in(Duration::from_millis(16));
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+
         match key_event {
             KeyEvent {
                 code: KeyCode::Up,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
             } => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                if self.cursor_idx > 0 {
+                    self.cursor_idx -= 1;
+                }
+                self.ensure_cursor_visible(area.height as usize);
+                self.g_pending = false;
             }
             KeyEvent {
                 code: KeyCode::Down,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
             } => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                if let Some(cache) = self.wrap_cache.as_ref() {
+                    if self.cursor_idx + 1 < cache.wrapped.len() {
+                        self.cursor_idx += 1;
+                    }
+                }
+                self.ensure_cursor_visible(area.height as usize);
+                self.g_pending = false;
+            }
+            // Vim-like jumps: gg to top, G to bottom
+            KeyEvent {
+                code: KeyCode::Char('g'),
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                if self.g_pending {
+                    self.g_pending = false;
+                    self.cursor_idx = 0;
+                    self.ensure_cursor_visible(area.height as usize);
+                    self.last_match_idx = Some(0);
+                } else {
+                    self.g_pending = true;
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Char('G'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                self.g_pending = false;
+                if let Some(cache) = self.wrap_cache.as_ref() {
+                    if !cache.wrapped.is_empty() {
+                        self.cursor_idx = cache.wrapped.len() - 1;
+                        self.ensure_cursor_visible(area.height as usize);
+                        self.last_match_idx = Some(self.cursor_idx);
+                    }
+                }
             }
             KeyEvent {
                 code: KeyCode::PageUp,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                let area = self.scroll_area(tui.terminal.viewport_area);
-                self.scroll_offset = self.scroll_offset.saturating_sub(area.height as usize);
+                let page = area.height as usize;
+                self.cursor_idx = self.cursor_idx.saturating_sub(page);
+                self.ensure_cursor_visible(page);
+                self.g_pending = false;
             }
             KeyEvent {
                 code: KeyCode::PageDown | KeyCode::Char(' '),
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                let area = self.scroll_area(tui.terminal.viewport_area);
-                self.scroll_offset = self.scroll_offset.saturating_add(area.height as usize);
+                if let Some(cache) = self.wrap_cache.as_ref() {
+                    let page = area.height as usize;
+                    let last = cache.wrapped.len().saturating_sub(1);
+                    self.cursor_idx = (self.cursor_idx + page).min(last);
+                    self.ensure_cursor_visible(page);
+                }
+                self.g_pending = false;
             }
             KeyEvent {
                 code: KeyCode::Home,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                self.scroll_offset = 0;
+                self.cursor_idx = 0;
+                self.ensure_cursor_visible(area.height as usize);
+                self.g_pending = false;
             }
             KeyEvent {
                 code: KeyCode::End,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                self.scroll_offset = usize::MAX;
+                if let Some(cache) = self.wrap_cache.as_ref() {
+                    if !cache.wrapped.is_empty() {
+                        self.cursor_idx = cache.wrapped.len() - 1;
+                        self.ensure_cursor_visible(area.height as usize);
+                    }
+                }
+                self.g_pending = false;
+            }
+            // Enter search mode with '/'; then 'Enter' to confirm; 'n'/'N' to navigate.
+            KeyEvent {
+                code: KeyCode::Char('/'),
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                self.g_pending = false;
+                self.search_input = Some(String::new());
+            }
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                if let Some(q) = self.last_search.clone() {
+                    let start = self
+                        .last_match_idx
+                        .map(|i| i.saturating_add(1))
+                        .unwrap_or(self.scroll_offset);
+                    if let Some(idx) = self.find_next_match(&q, start) {
+                        self.cursor_idx = idx;
+                        self.center_on(idx, area.height as usize);
+                        self.last_match_idx = Some(idx);
+                    }
+                }
+                self.g_pending = false;
+            }
+            KeyEvent {
+                code: KeyCode::Char('N'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                if let Some(q) = self.last_search.clone() {
+                    let start = self.last_match_idx.unwrap_or_else(|| self.scroll_offset);
+                    if let Some(idx) = self.find_prev_match(&q, start) {
+                        self.cursor_idx = idx;
+                        self.center_on(idx, area.height as usize);
+                        self.last_match_idx = Some(idx);
+                    }
+                }
+                self.g_pending = false;
             }
             _ => {
+                self.g_pending = false;
                 return Ok(());
             }
         }
@@ -263,6 +506,8 @@ struct WrapCache {
     /// For each input Text chunk, the inclusive-excluded range of wrapped lines produced.
     chunk_ranges: Vec<std::ops::Range<usize>>,
     base_len: usize,
+    /// Plain text for wrapped lines, used for searches.
+    wrapped_plain: Vec<String>,
 }
 
 impl PagerView {
@@ -276,12 +521,25 @@ impl PagerView {
             return;
         }
         let mut wrapped: Vec<Line<'static>> = Vec::new();
+        let mut wrapped_plain: Vec<String> = Vec::new();
         let mut chunk_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.texts.len());
         for text in &self.texts {
             let start = wrapped.len();
             for line in &text.lines {
-                let ws = crate::wrapping::word_wrap_line(line, width as usize);
-                push_owned_lines(&ws, &mut wrapped);
+                match self.wrap_mode {
+                    WrapMode::WordWrap => {
+                        let ws = crate::wrapping::word_wrap_line(line, width as usize);
+                        push_owned_lines(&ws, &mut wrapped);
+                        for l in &ws {
+                            wrapped_plain.push(Self::plain_text(l));
+                        }
+                    }
+                    WrapMode::NoWrap => {
+                        // Do not wrap; use the line as-is (owned). Horizontal clipping is applied at render time.
+                        push_owned_lines(&[line.clone()], &mut wrapped);
+                        wrapped_plain.push(Self::plain_text(line));
+                    }
+                }
             }
             let end = wrapped.len();
             chunk_ranges.push(start..end);
@@ -291,6 +549,7 @@ impl PagerView {
             wrapped,
             chunk_ranges,
             base_len: self.texts.len(),
+            wrapped_plain,
         });
     }
 
@@ -348,6 +607,142 @@ impl PagerView {
             // Scroll just enough so that 'last' is visible at the bottom
             self.scroll_offset = last.saturating_sub(viewport_height.saturating_sub(1));
         }
+    }
+
+    /// Convert a styled Line into a plain string for searching.
+    fn plain_text(line: &Line<'_>) -> String {
+        let mut s = String::new();
+        for sp in &line.spans {
+            s.push_str(sp.content.as_ref());
+        }
+        s
+    }
+
+    /// Center the viewport on a given wrapped line index.
+    fn center_on(&mut self, idx: usize, viewport_height: usize) {
+        if let Some(cache) = &self.wrap_cache {
+            let total = cache.wrapped.len();
+            if total == 0 {
+                self.scroll_offset = 0;
+                return;
+            }
+            let vis = viewport_height.min(total);
+            let half = vis / 3; // bias to upper third for context
+            let base = idx.saturating_sub(half);
+            let max_scroll = total.saturating_sub(vis);
+            self.scroll_offset = base.min(max_scroll);
+        }
+    }
+
+    fn find_next_match(&self, q: &str, start: usize) -> Option<usize> {
+        let cache = self.wrap_cache.as_ref()?;
+        if q.is_empty() {
+            return None;
+        }
+        let smart_case = q.chars().any(|c| c.is_uppercase());
+        if smart_case {
+            for (i, line) in cache.wrapped_plain.iter().enumerate().skip(start) {
+                if line.contains(q) {
+                    return Some(i);
+                }
+            }
+        } else {
+            let ql = q.to_lowercase();
+            for (i, line) in cache.wrapped_plain.iter().enumerate().skip(start) {
+                if line.to_lowercase().contains(&ql) {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    fn find_prev_match(&self, q: &str, start: usize) -> Option<usize> {
+        let cache = self.wrap_cache.as_ref()?;
+        if q.is_empty() {
+            return None;
+        }
+        let end = start.min(cache.wrapped_plain.len());
+        let smart_case = q.chars().any(|c| c.is_uppercase());
+        if smart_case {
+            for i in (0..end).rev() {
+                if cache.wrapped_plain[i].contains(q) {
+                    return Some(i);
+                }
+            }
+        } else {
+            let ql = q.to_lowercase();
+            for i in (0..end).rev() {
+                if cache.wrapped_plain[i].to_lowercase().contains(&ql) {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    /// Ensure the cursor is visible within the current viewport height; adjust scroll if needed.
+    fn ensure_cursor_visible(&mut self, viewport_height: usize) {
+        if let Some(cache) = &self.wrap_cache {
+            if cache.wrapped.is_empty() || viewport_height == 0 {
+                return;
+            }
+            let total = cache.wrapped.len();
+            let top = self.scroll_offset.min(total.saturating_sub(1));
+            let bottom = top.saturating_add(viewport_height.saturating_sub(1));
+            if self.cursor_idx < top {
+                self.scroll_offset = self.cursor_idx;
+            } else if self.cursor_idx > bottom {
+                self.scroll_offset = self
+                    .cursor_idx
+                    .saturating_sub(viewport_height.saturating_sub(1));
+            }
+        }
+    }
+
+    /// Clip a styled line horizontally given a starting column and width; preserves styles.
+    fn clip_line(&self, line: &Line<'_>, start_col: usize, width: usize) -> Line<'static> {
+        use ratatui::text::Span;
+        use unicode_width::UnicodeWidthChar;
+
+        if width == 0 {
+            return Line::default();
+        }
+        let mut out_spans: Vec<Span<'static>> = Vec::new();
+        let mut col = 0usize;
+        let mut taken = 0usize;
+        let mut started = false;
+        for s in &line.spans {
+            let text = s.content.as_ref();
+            if text.is_empty() {
+                continue;
+            }
+            let mut buf = String::new();
+            for ch in text.chars() {
+                let w = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+                if !started {
+                    if col + w > start_col {
+                        started = true;
+                    } else {
+                        col += w;
+                        continue;
+                    }
+                }
+                if taken + w > width {
+                    break;
+                }
+                buf.push(ch);
+                taken += w;
+                col += w;
+            }
+            if !buf.is_empty() {
+                out_spans.push(Span::from(buf).set_style(s.style));
+            }
+            if taken >= width {
+                break;
+            }
+        }
+        Line::from(out_spans).style(line.style)
     }
 }
 
@@ -464,8 +859,20 @@ impl TranscriptOverlay {
                     kind: KeyEventKind::Press,
                     ..
                 } => {
-                    self.is_done = true;
-                    Ok(())
+                    // Don't treat plain 'q' as quit when in search input mode; forward to view.
+                    if matches!(
+                        key_event,
+                        KeyEvent {
+                            code: KeyCode::Char('q'),
+                            ..
+                        }
+                    ) && self.view.search_input.is_some()
+                    {
+                        self.view.handle_key_event(tui, key_event)
+                    } else {
+                        self.is_done = true;
+                        Ok(())
+                    }
                 }
                 other => self.view.handle_key_event(tui, other),
             },
@@ -494,6 +901,16 @@ impl StaticOverlay {
             view: PagerView::new(vec![Text::from(lines)], title, 0),
             is_done: false,
         }
+    }
+
+    pub(crate) fn with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
+        let mut s = Self {
+            view: PagerView::new(vec![Text::from(lines)], title, 0),
+            is_done: false,
+        };
+        s.view.wrap_mode = WrapMode::NoWrap;
+        s.view.show_cursor_gutter = true;
+        s
     }
 
     fn render_hints(&self, area: Rect, buf: &mut Buffer) {
@@ -528,8 +945,20 @@ impl StaticOverlay {
                     kind: KeyEventKind::Press,
                     ..
                 } => {
-                    self.is_done = true;
-                    Ok(())
+                    // When search input is active, treat 'q' as input, not quit.
+                    if matches!(
+                        key_event,
+                        KeyEvent {
+                            code: KeyCode::Char('q'),
+                            ..
+                        }
+                    ) && self.view.search_input.is_some()
+                    {
+                        self.view.handle_key_event(tui, key_event)
+                    } else {
+                        self.is_done = true;
+                        Ok(())
+                    }
                 }
                 other => self.view.handle_key_event(tui, other),
             },
@@ -551,19 +980,15 @@ impl StaticOverlay {
 mod tests {
     use super::*;
     use insta::assert_snapshot;
-    use std::collections::HashMap;
-    use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::time::Duration;
+    use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
-    use crate::exec_cell::CommandOutput;
-    use crate::history_cell::HistoryCell;
-    use crate::history_cell::PatchEventType;
-    use crate::history_cell::new_patch_event;
+    use crate::{
+        exec_cell::CommandOutput,
+        history_cell::{HistoryCell, PatchEventType, new_patch_event},
+    };
     use codex_core::protocol::FileChange;
     use codex_protocol::parse_command::ParsedCommand;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[derive(Debug)]
     struct TestCell {

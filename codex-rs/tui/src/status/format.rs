@@ -1,8 +1,6 @@
-use ratatui::prelude::*;
-use ratatui::style::Stylize;
+use ratatui::{prelude::*, style::Stylize};
 use std::collections::BTreeSet;
-use unicode_width::UnicodeWidthChar;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug, Clone)]
 pub(crate) struct FieldFormatter {

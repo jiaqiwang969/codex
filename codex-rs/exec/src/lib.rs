@@ -5,38 +5,31 @@ pub mod event_processor_with_json_output;
 pub mod exec_events;
 pub mod experimental_event_processor_with_json_output;
 
-use std::io::IsTerminal;
-use std::io::Read;
-use std::path::PathBuf;
+use std::{
+    io::{IsTerminal, Read},
+    path::PathBuf,
+};
 
 pub use cli::Cli;
-use codex_core::AuthManager;
-use codex_core::BUILT_IN_OSS_MODEL_PROVIDER_ID;
-use codex_core::ConversationManager;
-use codex_core::NewConversation;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::git_info::get_git_repo_root;
-use codex_core::protocol::AskForApproval;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::Op;
-use codex_core::protocol::TaskCompleteEvent;
+use codex_core::{
+    AuthManager, BUILT_IN_OSS_MODEL_PROVIDER_ID, ConversationManager, NewConversation,
+    config::{Config, ConfigOverrides},
+    git_info::get_git_repo_root,
+    protocol::{AskForApproval, Event, EventMsg, InputItem, Op, TaskCompleteEvent},
+};
 use codex_ollama::DEFAULT_OSS_MODEL;
 use codex_protocol::config_types::SandboxMode;
 use event_processor_with_human_output::EventProcessorWithHumanOutput;
 use experimental_event_processor_with_json_output::ExperimentalEventProcessorWithJsonOutput;
 use serde_json::Value;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
+use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
-use crate::cli::Command as ExecCommand;
-use crate::event_processor::CodexStatus;
-use crate::event_processor::EventProcessor;
-use crate::event_processor_with_json_output::EventProcessorWithJsonOutput;
+use crate::{
+    cli::Command as ExecCommand,
+    event_processor::{CodexStatus, EventProcessor},
+    event_processor_with_json_output::EventProcessorWithJsonOutput,
+};
 use codex_core::find_conversation_path_by_id_str;
 
 pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> anyhow::Result<()> {

@@ -2,18 +2,13 @@ use std::io::IsTerminal;
 
 use clap::Parser;
 use codex_common::CliConfigOverrides;
-use codex_core::AuthManager;
-use codex_core::ConversationManager;
-use codex_core::NewConversation;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::Submission;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
-use tracing::error;
-use tracing::info;
+use codex_core::{
+    AuthManager, ConversationManager, NewConversation,
+    config::{Config, ConfigOverrides},
+    protocol::{Event, EventMsg, Submission},
+};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tracing::{error, info};
 
 #[derive(Debug, Parser)]
 pub struct ProtoCli {

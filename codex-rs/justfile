@@ -23,7 +23,9 @@ file-search *args:
 
 # format code
 fmt:
-    cargo fmt -- --config imports_granularity=Item
+    # Use nightly rustfmt if available (reads rustfmt.toml with imports_granularity = "Item").
+    # Otherwise, use a stable-only config to avoid warnings.
+    if rustup run nightly rustfmt --version >/dev/null 2>&1; then cargo +nightly fmt; else cargo fmt -- --config-path rustfmt.stable.toml; fi
 
 fix *args:
     cargo clippy --fix --all-features --tests --allow-dirty "$@"

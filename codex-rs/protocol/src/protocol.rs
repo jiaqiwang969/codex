@@ -3,27 +3,28 @@
 //! Uses a SQ (Submission Queue) / EQ (Event Queue) pattern to asynchronously communicate
 //! between user and agent.
 
-use std::collections::HashMap;
-use std::fmt;
-use std::path::Path;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Duration,
+};
 
-use crate::config_types::ReasoningEffort as ReasoningEffortConfig;
-use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use crate::custom_prompts::CustomPrompt;
-use crate::mcp_protocol::ConversationId;
-use crate::message_history::HistoryEntry;
-use crate::models::ContentItem;
-use crate::models::ResponseItem;
-use crate::num_format::format_with_separators;
-use crate::parse_command::ParsedCommand;
-use crate::plan_tool::UpdatePlanArgs;
-use mcp_types::CallToolResult;
-use mcp_types::Tool as McpTool;
-use serde::Deserialize;
-use serde::Serialize;
+use crate::{
+    config_types::{
+        ReasoningEffort as ReasoningEffortConfig, ReasoningSummary as ReasoningSummaryConfig,
+    },
+    custom_prompts::CustomPrompt,
+    mcp_protocol::ConversationId,
+    message_history::HistoryEntry,
+    models::{ContentItem, ResponseItem},
+    num_format::format_with_separators,
+    parse_command::ParsedCommand,
+    plan_tool::UpdatePlanArgs,
+};
+use mcp_types::{CallToolResult, Tool as McpTool};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::serde_as;
 use strum_macros::Display;

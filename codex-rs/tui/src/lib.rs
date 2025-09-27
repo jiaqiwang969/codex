@@ -5,29 +5,21 @@
 #![deny(clippy::disallowed_methods)]
 use app::App;
 pub use app::AppExitInfo;
-use codex_core::AuthManager;
-use codex_core::BUILT_IN_OSS_MODEL_PROVIDER_ID;
-use codex_core::CodexAuth;
-use codex_core::RolloutRecorder;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::ConfigToml;
-use codex_core::config::GPT_5_CODEX_MEDIUM_MODEL;
-use codex_core::config::find_codex_home;
-use codex_core::config::load_config_as_toml_with_cli_overrides;
-use codex_core::config::persist_model_selection;
-use codex_core::find_conversation_path_by_id_str;
-use codex_core::protocol::AskForApproval;
-use codex_core::protocol::SandboxPolicy;
+use codex_core::{
+    AuthManager, BUILT_IN_OSS_MODEL_PROVIDER_ID, CodexAuth, RolloutRecorder,
+    config::{
+        Config, ConfigOverrides, ConfigToml, GPT_5_CODEX_MEDIUM_MODEL, find_codex_home,
+        load_config_as_toml_with_cli_overrides, persist_model_selection,
+    },
+    find_conversation_path_by_id_str,
+    protocol::{AskForApproval, SandboxPolicy},
+};
 use codex_ollama::DEFAULT_OSS_MODEL;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::mcp_protocol::AuthMode;
-use std::fs::OpenOptions;
-use std::path::PathBuf;
+use codex_protocol::{config_types::SandboxMode, mcp_protocol::AuthMode};
+use std::{fs::OpenOptions, path::PathBuf};
 use tracing::error;
 use tracing_appender::non_blocking;
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::prelude::*;
+use tracing_subscriber::{EnvFilter, prelude::*};
 
 mod app;
 mod app_backtrack;
@@ -47,6 +39,7 @@ mod exec_command;
 mod file_search;
 mod frames;
 mod get_git_diff;
+mod git_graph_widget;
 mod history_cell;
 pub mod insert_history;
 mod key_hint;
@@ -79,12 +72,14 @@ pub mod test_backend;
 #[cfg(not(debug_assertions))]
 mod updates;
 
-use crate::new_model_popup::ModelUpgradeDecision;
-use crate::new_model_popup::run_model_upgrade_popup;
-use crate::onboarding::TrustDirectorySelection;
-use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
-use crate::onboarding::onboarding_screen::run_onboarding_app;
-use crate::tui::Tui;
+use crate::{
+    new_model_popup::{ModelUpgradeDecision, run_model_upgrade_popup},
+    onboarding::{
+        TrustDirectorySelection,
+        onboarding_screen::{OnboardingScreenArgs, run_onboarding_app},
+    },
+    tui::Tui,
+};
 pub use cli::Cli;
 use codex_core::internal_storage::InternalStorage;
 
@@ -288,8 +283,7 @@ async fn run_ratatui_app(
     // within the TUI scrollback. Building spans keeps styling consistent.
     #[cfg(not(debug_assertions))]
     if let Some(latest_version) = updates::get_upgrade_version(&config) {
-        use ratatui::style::Stylize as _;
-        use ratatui::text::Line;
+        use ratatui::{style::Stylize as _, text::Line};
 
         let current_version = env!("CARGO_PKG_VERSION");
         let exe = std::env::current_exe()?;
@@ -553,14 +547,11 @@ fn should_show_model_rollout_prompt(
 mod tests {
     use super::*;
     use clap::Parser;
-    use codex_core::auth::AuthDotJson;
-    use codex_core::auth::get_auth_file;
-    use codex_core::auth::login_with_api_key;
-    use codex_core::auth::write_auth_json;
-    use codex_core::token_data::IdTokenInfo;
-    use codex_core::token_data::TokenData;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
+    use codex_core::{
+        auth::{AuthDotJson, get_auth_file, login_with_api_key, write_auth_json},
+        token_data::{IdTokenInfo, TokenData},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn get_next_codex_home() -> PathBuf {
         static NEXT_CODEX_HOME_ID: AtomicUsize = AtomicUsize::new(0);

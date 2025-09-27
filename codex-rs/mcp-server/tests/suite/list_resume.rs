@@ -1,16 +1,12 @@
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
-use codex_protocol::mcp_protocol::ListConversationsParams;
-use codex_protocol::mcp_protocol::ListConversationsResponse;
 use codex_protocol::mcp_protocol::NewConversationParams; // reused for overrides shape
-use codex_protocol::mcp_protocol::ResumeConversationParams;
-use codex_protocol::mcp_protocol::ResumeConversationResponse;
-use mcp_test_support::McpProcess;
-use mcp_test_support::to_response;
-use mcp_types::JSONRPCNotification;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use codex_protocol::mcp_protocol::{
+    ListConversationsParams, ListConversationsResponse, ResumeConversationParams,
+    ResumeConversationResponse,
+};
+use mcp_test_support::{McpProcess, to_response};
+use mcp_types::{JSONRPCNotification, JSONRPCResponse, RequestId};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;

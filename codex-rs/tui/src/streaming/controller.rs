@@ -1,5 +1,6 @@
-use crate::history_cell::HistoryCell;
-use crate::history_cell::{self};
+use crate::history_cell::{
+    HistoryCell, {self},
+};
 use codex_core::config::Config;
 use ratatui::text::Line;
 
@@ -88,8 +89,7 @@ impl StreamController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_core::config::Config;
-    use codex_core::config::ConfigOverrides;
+    use codex_core::config::{Config, ConfigOverrides};
 
     fn test_config() -> Config {
         let overrides = ConfigOverrides {

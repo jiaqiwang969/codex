@@ -1,12 +1,10 @@
 use codex_common::CliConfigOverrides;
-use codex_core::CodexAuth;
-use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
-use codex_core::auth::logout;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_login::ServerOptions;
-use codex_login::run_login_server;
+use codex_core::{
+    CodexAuth,
+    auth::{CLIENT_ID, login_with_api_key, logout},
+    config::{Config, ConfigOverrides},
+};
+use codex_login::{ServerOptions, run_login_server};
 use codex_protocol::mcp_protocol::AuthMode;
 use std::path::PathBuf;
 

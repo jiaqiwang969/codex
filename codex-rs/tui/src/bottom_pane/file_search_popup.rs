@@ -1,12 +1,11 @@
 use codex_file_search::FileMatch;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::widgets::WidgetRef;
+use ratatui::{buffer::Buffer, layout::Rect, widgets::WidgetRef};
 
-use super::popup_consts::MAX_POPUP_ROWS;
-use super::scroll_state::ScrollState;
-use super::selection_popup_common::GenericDisplayRow;
-use super::selection_popup_common::render_rows;
+use super::{
+    popup_consts::MAX_POPUP_ROWS,
+    scroll_state::ScrollState,
+    selection_popup_common::{GenericDisplayRow, render_rows},
+};
 
 /// Visual state for the file-search popup.
 pub(crate) struct FileSearchPopup {

@@ -1,8 +1,8 @@
-use crate::RolloutRecorder;
-use crate::exec_command::ExecSessionManager;
-use crate::mcp_connection_manager::McpConnectionManager;
-use crate::unified_exec::UnifiedExecSessionManager;
-use crate::user_notification::UserNotifier;
+use crate::{
+    RolloutRecorder, exec_command::ExecSessionManager,
+    mcp_connection_manager::McpConnectionManager, unified_exec::UnifiedExecSessionManager,
+    user_notification::UserNotifier,
+};
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 

@@ -1,24 +1,22 @@
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Widget;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    text::{Line, Span},
+    widgets::{Paragraph, Widget},
+};
 use textwrap::wrap;
 
 use crate::app_event_sender::AppEventSender;
 
-use super::CancellationEvent;
-use super::bottom_pane_view::BottomPaneView;
-use super::popup_consts::MAX_POPUP_ROWS;
-use super::scroll_state::ScrollState;
-use super::selection_popup_common::GenericDisplayRow;
-use super::selection_popup_common::measure_rows_height;
-use super::selection_popup_common::render_rows;
+use super::{
+    CancellationEvent,
+    bottom_pane_view::BottomPaneView,
+    popup_consts::MAX_POPUP_ROWS,
+    scroll_state::ScrollState,
+    selection_popup_common::{GenericDisplayRow, measure_rows_height, render_rows},
+};
 
 /// One selectable item in the generic selection list.
 pub(crate) type SelectionAction = Box<dyn Fn(&AppEventSender) + Send + Sync>;
@@ -473,10 +471,8 @@ impl BottomPaneView for ListSelectionView {
 
 #[cfg(test)]
 mod tests {
-    use super::BottomPaneView;
-    use super::*;
-    use crate::app_event::AppEvent;
-    use crate::bottom_pane::popup_consts::STANDARD_POPUP_HINT_LINE;
+    use super::{BottomPaneView, *};
+    use crate::{app_event::AppEvent, bottom_pane::popup_consts::STANDARD_POPUP_HINT_LINE};
     use insta::assert_snapshot;
     use ratatui::layout::Rect;
     use tokio::sync::mpsc::unbounded_channel;

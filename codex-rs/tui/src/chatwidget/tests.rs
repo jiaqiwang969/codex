@@ -1,49 +1,27 @@
 use super::*;
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
-use crate::test_backend::VT100Backend;
-use codex_core::AuthManager;
-use codex_core::CodexAuth;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::ConfigToml;
-use codex_core::plan_tool::PlanItemArg;
-use codex_core::plan_tool::StepStatus;
-use codex_core::plan_tool::UpdatePlanArgs;
-use codex_core::protocol::AgentMessageDeltaEvent;
-use codex_core::protocol::AgentMessageEvent;
-use codex_core::protocol::AgentReasoningDeltaEvent;
-use codex_core::protocol::AgentReasoningEvent;
-use codex_core::protocol::ApplyPatchApprovalRequestEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecApprovalRequestEvent;
-use codex_core::protocol::ExecCommandBeginEvent;
-use codex_core::protocol::ExecCommandEndEvent;
-use codex_core::protocol::ExitedReviewModeEvent;
-use codex_core::protocol::FileChange;
-use codex_core::protocol::InputMessageKind;
-use codex_core::protocol::Op;
-use codex_core::protocol::PatchApplyBeginEvent;
-use codex_core::protocol::PatchApplyEndEvent;
-use codex_core::protocol::ReviewCodeLocation;
-use codex_core::protocol::ReviewFinding;
-use codex_core::protocol::ReviewLineRange;
-use codex_core::protocol::ReviewOutputEvent;
-use codex_core::protocol::ReviewRequest;
-use codex_core::protocol::StreamErrorEvent;
-use codex_core::protocol::TaskCompleteEvent;
-use codex_core::protocol::TaskStartedEvent;
+use crate::{app_event::AppEvent, app_event_sender::AppEventSender, test_backend::VT100Backend};
+use codex_core::{
+    AuthManager, CodexAuth,
+    config::{Config, ConfigOverrides, ConfigToml},
+    plan_tool::{PlanItemArg, StepStatus, UpdatePlanArgs},
+    protocol::{
+        AgentMessageDeltaEvent, AgentMessageEvent, AgentReasoningDeltaEvent, AgentReasoningEvent,
+        ApplyPatchApprovalRequestEvent, Event, EventMsg, ExecApprovalRequestEvent,
+        ExecCommandBeginEvent, ExecCommandEndEvent, ExitedReviewModeEvent, FileChange,
+        InputMessageKind, Op, PatchApplyBeginEvent, PatchApplyEndEvent, ReviewCodeLocation,
+        ReviewFinding, ReviewLineRange, ReviewOutputEvent, ReviewRequest, StreamErrorEvent,
+        TaskCompleteEvent, TaskStartedEvent,
+    },
+};
 use codex_protocol::mcp_protocol::ConversationId;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
-use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+};
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -1326,8 +1304,7 @@ fn interrupt_prepends_queued_messages_before_existing_composer_text() {
 // Ensures overall layout behaves when terminal height is extremely constrained.
 #[test]
 fn ui_snapshots_small_heights_idle() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use ratatui::{Terminal, backend::TestBackend};
     let (chat, _rx, _op_rx) = make_chatwidget_manual();
     for h in [1u16, 2, 3] {
         let name = format!("chat_small_idle_h{h}");
@@ -1343,8 +1320,7 @@ fn ui_snapshots_small_heights_idle() {
 // Validates how status + composer are presented within tight space.
 #[test]
 fn ui_snapshots_small_heights_task_running() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
+    use ratatui::{Terminal, backend::TestBackend};
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual();
     // Activate status line
     chat.handle_codex_event(Event {

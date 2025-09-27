@@ -1,14 +1,10 @@
 use std::path::Path;
 
-use codex_protocol::mcp_protocol::AuthMode;
-use codex_protocol::mcp_protocol::GetAuthStatusParams;
-use codex_protocol::mcp_protocol::GetAuthStatusResponse;
-use codex_protocol::mcp_protocol::LoginApiKeyParams;
-use codex_protocol::mcp_protocol::LoginApiKeyResponse;
-use mcp_test_support::McpProcess;
-use mcp_test_support::to_response;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use codex_protocol::mcp_protocol::{
+    AuthMode, GetAuthStatusParams, GetAuthStatusResponse, LoginApiKeyParams, LoginApiKeyResponse,
+};
+use mcp_test_support::{McpProcess, to_response};
+use mcp_types::{JSONRPCResponse, RequestId};
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::timeout;

@@ -1,23 +1,20 @@
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
-use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::StatefulWidgetRef;
-use ratatui::widgets::Widget;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Stylize,
+    text::{Line, Span},
+    widgets::{Clear, Paragraph, StatefulWidgetRef, Widget},
+};
 use std::cell::RefCell;
 
 use super::popup_consts::STANDARD_POPUP_HINT_LINE;
 
-use super::CancellationEvent;
-use super::bottom_pane_view::BottomPaneView;
-use super::textarea::TextArea;
-use super::textarea::TextAreaState;
+use super::{
+    CancellationEvent,
+    bottom_pane_view::BottomPaneView,
+    textarea::{TextArea, TextAreaState},
+};
 
 /// Callback invoked when the user submits a custom prompt.
 pub(crate) type PromptSubmitted = Box<dyn Fn(String) + Send + Sync>;

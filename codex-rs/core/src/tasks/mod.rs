@@ -7,17 +7,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tracing::trace;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::protocol::Event;
-use crate::protocol::EventMsg;
-use crate::protocol::InputItem;
-use crate::protocol::TaskCompleteEvent;
-use crate::protocol::TurnAbortReason;
-use crate::protocol::TurnAbortedEvent;
-use crate::state::ActiveTurn;
-use crate::state::RunningTask;
-use crate::state::TaskKind;
+use crate::{
+    codex::{Session, TurnContext},
+    protocol::{Event, EventMsg, InputItem, TaskCompleteEvent, TurnAbortReason, TurnAbortedEvent},
+    state::{ActiveTurn, RunningTask, TaskKind},
+};
 
 pub(crate) use compact::CompactTask;
 pub(crate) use regular::RegularTask;

@@ -3,24 +3,19 @@
 
 use std::time::Duration;
 
-use codex_core::ModelProviderInfo;
-use codex_core::WireApi;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::InputItem;
-use codex_core::protocol::Op;
-use core_test_support::load_sse_fixture;
-use core_test_support::load_sse_fixture_with_id;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use codex_core::{
+    ModelProviderInfo, WireApi,
+    protocol::{EventMsg, InputItem, Op},
+};
+use core_test_support::{
+    load_sse_fixture, load_sse_fixture_with_id, skip_if_no_network,
+    test_codex::{TestCodex, test_codex},
+};
 use tokio::time::timeout;
-use wiremock::Mock;
-use wiremock::MockServer;
-use wiremock::Request;
-use wiremock::Respond;
-use wiremock::ResponseTemplate;
-use wiremock::matchers::method;
-use wiremock::matchers::path;
+use wiremock::{
+    Mock, MockServer, Request, Respond, ResponseTemplate,
+    matchers::{method, path},
+};
 
 fn sse_incomplete() -> String {
     load_sse_fixture("tests/fixtures/incomplete_sse.json")
@@ -39,8 +34,7 @@ async fn retries_on_early_close() {
     struct SeqResponder;
     impl Respond for SeqResponder {
         fn respond(&self, _: &Request) -> ResponseTemplate {
-            use std::sync::atomic::AtomicUsize;
-            use std::sync::atomic::Ordering;
+            use std::sync::atomic::{AtomicUsize, Ordering};
             static CALLS: AtomicUsize = AtomicUsize::new(0);
             let n = CALLS.fetch_add(1, Ordering::SeqCst);
             if n == 0 {

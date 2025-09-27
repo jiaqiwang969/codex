@@ -1,8 +1,7 @@
 #![cfg(feature = "vt100-tests")]
 
 use crate::test_backend::VT100Backend;
-use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::{layout::Rect, text::Line};
 
 #[test]
 fn live_001_commit_on_overflow() {

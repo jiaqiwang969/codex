@@ -1,8 +1,9 @@
 use std::sync::Mutex as StdMutex;
 
-use tokio::sync::broadcast;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{broadcast, mpsc},
+    task::JoinHandle,
+};
 
 #[derive(Debug)]
 pub(crate) struct ExecCommandSession {

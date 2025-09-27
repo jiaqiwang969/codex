@@ -1,43 +1,28 @@
-use std::path::Path;
-use std::process::Stdio;
-use std::sync::atomic::AtomicI64;
-use std::sync::atomic::Ordering;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::process::Child;
-use tokio::process::ChildStdin;
-use tokio::process::ChildStdout;
+use std::{
+    path::Path,
+    process::Stdio,
+    sync::atomic::{AtomicI64, Ordering},
+};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::{Child, ChildStdin, ChildStdout},
+};
 
 use anyhow::Context;
 use assert_cmd::prelude::*;
 use codex_mcp_server::CodexToolCallParam;
-use codex_protocol::mcp_protocol::AddConversationListenerParams;
-use codex_protocol::mcp_protocol::ArchiveConversationParams;
-use codex_protocol::mcp_protocol::CancelLoginChatGptParams;
-use codex_protocol::mcp_protocol::GetAuthStatusParams;
-use codex_protocol::mcp_protocol::InterruptConversationParams;
-use codex_protocol::mcp_protocol::ListConversationsParams;
-use codex_protocol::mcp_protocol::LoginApiKeyParams;
-use codex_protocol::mcp_protocol::NewConversationParams;
-use codex_protocol::mcp_protocol::RemoveConversationListenerParams;
-use codex_protocol::mcp_protocol::ResumeConversationParams;
-use codex_protocol::mcp_protocol::SendUserMessageParams;
-use codex_protocol::mcp_protocol::SendUserTurnParams;
-use codex_protocol::mcp_protocol::SetDefaultModelParams;
+use codex_protocol::mcp_protocol::{
+    AddConversationListenerParams, ArchiveConversationParams, CancelLoginChatGptParams,
+    GetAuthStatusParams, InterruptConversationParams, ListConversationsParams, LoginApiKeyParams,
+    NewConversationParams, RemoveConversationListenerParams, ResumeConversationParams,
+    SendUserMessageParams, SendUserTurnParams, SetDefaultModelParams,
+};
 
-use mcp_types::CallToolRequestParams;
-use mcp_types::ClientCapabilities;
-use mcp_types::Implementation;
-use mcp_types::InitializeRequestParams;
-use mcp_types::JSONRPC_VERSION;
-use mcp_types::JSONRPCMessage;
-use mcp_types::JSONRPCNotification;
-use mcp_types::JSONRPCRequest;
-use mcp_types::JSONRPCResponse;
-use mcp_types::ModelContextProtocolNotification;
-use mcp_types::ModelContextProtocolRequest;
-use mcp_types::RequestId;
+use mcp_types::{
+    CallToolRequestParams, ClientCapabilities, Implementation, InitializeRequestParams,
+    JSONRPC_VERSION, JSONRPCMessage, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
+    ModelContextProtocolNotification, ModelContextProtocolRequest, RequestId,
+};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::process::Command as StdCommand;

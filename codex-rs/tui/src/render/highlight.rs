@@ -1,7 +1,8 @@
 use codex_core::bash::try_parse_bash;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Span;
+use ratatui::{
+    style::Stylize,
+    text::{Line, Span},
+};
 
 /// Convert the full bash script into per-line styled content by first
 /// computing operator-dimmed spans across the entire script, then splitting

@@ -1,20 +1,12 @@
-use std::collections::HashMap;
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use codex_core::protocol::AskForApproval;
-use codex_protocol::config_types::ReasoningEffort;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::Verbosity;
-use codex_protocol::mcp_protocol::GetUserSavedConfigResponse;
-use codex_protocol::mcp_protocol::Profile;
-use codex_protocol::mcp_protocol::SandboxSettings;
-use codex_protocol::mcp_protocol::Tools;
-use codex_protocol::mcp_protocol::UserSavedConfig;
-use mcp_test_support::McpProcess;
-use mcp_test_support::to_response;
-use mcp_types::JSONRPCResponse;
-use mcp_types::RequestId;
+use codex_protocol::{
+    config_types::{ReasoningEffort, ReasoningSummary, SandboxMode, Verbosity},
+    mcp_protocol::{GetUserSavedConfigResponse, Profile, SandboxSettings, Tools, UserSavedConfig},
+};
+use mcp_test_support::{McpProcess, to_response};
+use mcp_types::{JSONRPCResponse, RequestId};
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::timeout;

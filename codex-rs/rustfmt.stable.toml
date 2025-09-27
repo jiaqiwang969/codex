@@ -1,0 +1,3 @@
+edition = "2024"
+## Stable-friendly fallback config
+# Avoid nightly-only options to suppress warnings on stable rustfmt.

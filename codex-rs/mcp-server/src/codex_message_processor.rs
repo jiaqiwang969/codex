@@ -1,100 +1,52 @@
-use crate::error_code::INTERNAL_ERROR_CODE;
-use crate::error_code::INVALID_REQUEST_ERROR_CODE;
-use crate::json_to_toml::json_to_toml;
-use crate::outgoing_message::OutgoingMessageSender;
-use crate::outgoing_message::OutgoingNotification;
-use codex_core::AuthManager;
-use codex_core::CodexConversation;
-use codex_core::ConversationManager;
-use codex_core::Cursor as RolloutCursor;
-use codex_core::NewConversation;
-use codex_core::RolloutRecorder;
-use codex_core::SessionMeta;
-use codex_core::auth::CLIENT_ID;
-use codex_core::auth::get_auth_file;
-use codex_core::auth::login_with_api_key;
-use codex_core::auth::try_read_auth_json;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::ConfigToml;
-use codex_core::config::load_config_as_toml;
-use codex_core::config_edit::CONFIG_KEY_EFFORT;
-use codex_core::config_edit::CONFIG_KEY_MODEL;
-use codex_core::config_edit::persist_overrides_and_clear_if_none;
-use codex_core::default_client::get_codex_user_agent;
-use codex_core::exec::ExecParams;
-use codex_core::exec_env::create_env;
-use codex_core::get_platform_sandbox;
-use codex_core::git_info::git_diff_to_remote;
-use codex_core::protocol::ApplyPatchApprovalRequestEvent;
-use codex_core::protocol::Event;
-use codex_core::protocol::EventMsg;
-use codex_core::protocol::ExecApprovalRequestEvent;
-use codex_core::protocol::InputItem as CoreInputItem;
-use codex_core::protocol::Op;
-use codex_core::protocol::ReviewDecision;
-use codex_login::ServerOptions as LoginServerOptions;
-use codex_login::ShutdownHandle;
-use codex_login::run_login_server;
-use codex_protocol::mcp_protocol::APPLY_PATCH_APPROVAL_METHOD;
-use codex_protocol::mcp_protocol::AddConversationListenerParams;
-use codex_protocol::mcp_protocol::AddConversationSubscriptionResponse;
-use codex_protocol::mcp_protocol::ApplyPatchApprovalParams;
-use codex_protocol::mcp_protocol::ApplyPatchApprovalResponse;
-use codex_protocol::mcp_protocol::ArchiveConversationParams;
-use codex_protocol::mcp_protocol::ArchiveConversationResponse;
-use codex_protocol::mcp_protocol::AuthStatusChangeNotification;
-use codex_protocol::mcp_protocol::ClientRequest;
-use codex_protocol::mcp_protocol::ConversationId;
-use codex_protocol::mcp_protocol::ConversationSummary;
-use codex_protocol::mcp_protocol::EXEC_COMMAND_APPROVAL_METHOD;
-use codex_protocol::mcp_protocol::ExecArbitraryCommandResponse;
-use codex_protocol::mcp_protocol::ExecCommandApprovalParams;
-use codex_protocol::mcp_protocol::ExecCommandApprovalResponse;
-use codex_protocol::mcp_protocol::ExecOneOffCommandParams;
-use codex_protocol::mcp_protocol::GetUserAgentResponse;
-use codex_protocol::mcp_protocol::GetUserSavedConfigResponse;
-use codex_protocol::mcp_protocol::GitDiffToRemoteResponse;
-use codex_protocol::mcp_protocol::InputItem as WireInputItem;
-use codex_protocol::mcp_protocol::InterruptConversationParams;
-use codex_protocol::mcp_protocol::InterruptConversationResponse;
-use codex_protocol::mcp_protocol::ListConversationsParams;
-use codex_protocol::mcp_protocol::ListConversationsResponse;
-use codex_protocol::mcp_protocol::LoginApiKeyParams;
-use codex_protocol::mcp_protocol::LoginApiKeyResponse;
-use codex_protocol::mcp_protocol::LoginChatGptCompleteNotification;
-use codex_protocol::mcp_protocol::LoginChatGptResponse;
-use codex_protocol::mcp_protocol::NewConversationParams;
-use codex_protocol::mcp_protocol::NewConversationResponse;
-use codex_protocol::mcp_protocol::RemoveConversationListenerParams;
-use codex_protocol::mcp_protocol::RemoveConversationSubscriptionResponse;
-use codex_protocol::mcp_protocol::ResumeConversationParams;
-use codex_protocol::mcp_protocol::SendUserMessageParams;
-use codex_protocol::mcp_protocol::SendUserMessageResponse;
-use codex_protocol::mcp_protocol::SendUserTurnParams;
-use codex_protocol::mcp_protocol::SendUserTurnResponse;
-use codex_protocol::mcp_protocol::ServerNotification;
-use codex_protocol::mcp_protocol::SetDefaultModelParams;
-use codex_protocol::mcp_protocol::SetDefaultModelResponse;
-use codex_protocol::mcp_protocol::UserInfoResponse;
-use codex_protocol::mcp_protocol::UserSavedConfig;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::InputMessageKind;
-use codex_protocol::protocol::USER_MESSAGE_BEGIN;
-use mcp_types::JSONRPCErrorError;
-use mcp_types::RequestId;
-use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::select;
-use tokio::sync::Mutex;
-use tokio::sync::oneshot;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
+use crate::{
+    error_code::{INTERNAL_ERROR_CODE, INVALID_REQUEST_ERROR_CODE},
+    json_to_toml::json_to_toml,
+    outgoing_message::{OutgoingMessageSender, OutgoingNotification},
+};
+use codex_core::{
+    AuthManager, CodexConversation, ConversationManager, Cursor as RolloutCursor, NewConversation,
+    RolloutRecorder, SessionMeta,
+    auth::{CLIENT_ID, get_auth_file, login_with_api_key, try_read_auth_json},
+    config::{Config, ConfigOverrides, ConfigToml, load_config_as_toml},
+    config_edit::{CONFIG_KEY_EFFORT, CONFIG_KEY_MODEL, persist_overrides_and_clear_if_none},
+    default_client::get_codex_user_agent,
+    exec::ExecParams,
+    exec_env::create_env,
+    get_platform_sandbox,
+    git_info::git_diff_to_remote,
+    protocol::{
+        ApplyPatchApprovalRequestEvent, Event, EventMsg, ExecApprovalRequestEvent,
+        InputItem as CoreInputItem, Op, ReviewDecision,
+    },
+};
+use codex_login::{ServerOptions as LoginServerOptions, ShutdownHandle, run_login_server};
+use codex_protocol::{
+    mcp_protocol::{
+        APPLY_PATCH_APPROVAL_METHOD, AddConversationListenerParams,
+        AddConversationSubscriptionResponse, ApplyPatchApprovalParams, ApplyPatchApprovalResponse,
+        ArchiveConversationParams, ArchiveConversationResponse, AuthStatusChangeNotification,
+        ClientRequest, ConversationId, ConversationSummary, EXEC_COMMAND_APPROVAL_METHOD,
+        ExecArbitraryCommandResponse, ExecCommandApprovalParams, ExecCommandApprovalResponse,
+        ExecOneOffCommandParams, GetUserAgentResponse, GetUserSavedConfigResponse,
+        GitDiffToRemoteResponse, InputItem as WireInputItem, InterruptConversationParams,
+        InterruptConversationResponse, ListConversationsParams, ListConversationsResponse,
+        LoginApiKeyParams, LoginApiKeyResponse, LoginChatGptCompleteNotification,
+        LoginChatGptResponse, NewConversationParams, NewConversationResponse,
+        RemoveConversationListenerParams, RemoveConversationSubscriptionResponse,
+        ResumeConversationParams, SendUserMessageParams, SendUserMessageResponse,
+        SendUserTurnParams, SendUserTurnResponse, ServerNotification, SetDefaultModelParams,
+        SetDefaultModelResponse, UserInfoResponse, UserSavedConfig,
+    },
+    models::{ContentItem, ResponseItem},
+    protocol::{InputMessageKind, USER_MESSAGE_BEGIN},
+};
+use mcp_types::{JSONRPCErrorError, RequestId};
+use std::{collections::HashMap, ffi::OsStr, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{
+    select,
+    sync::{Mutex, oneshot},
+};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 // Duration before a ChatGPT login attempt is abandoned.

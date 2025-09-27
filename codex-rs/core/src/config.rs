@@ -1,42 +1,30 @@
-use crate::config_profile::ConfigProfile;
-use crate::config_types::History;
-use crate::config_types::McpServerConfig;
-use crate::config_types::McpServerTransportConfig;
-use crate::config_types::Notifications;
-use crate::config_types::ReasoningSummaryFormat;
-use crate::config_types::SandboxWorkspaceWrite;
-use crate::config_types::ShellEnvironmentPolicy;
-use crate::config_types::ShellEnvironmentPolicyToml;
-use crate::config_types::Tui;
-use crate::config_types::UriBasedFileOpener;
-use crate::git_info::resolve_root_git_project_for_trust;
-use crate::model_family::ModelFamily;
-use crate::model_family::derive_default_model_family;
-use crate::model_family::find_family_for_model;
-use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::built_in_model_providers;
-use crate::openai_model_info::get_model_info;
-use crate::protocol::AskForApproval;
-use crate::protocol::SandboxPolicy;
+use crate::{
+    config_profile::ConfigProfile,
+    config_types::{
+        History, McpServerConfig, McpServerTransportConfig, Notifications, ReasoningSummaryFormat,
+        SandboxWorkspaceWrite, ShellEnvironmentPolicy, ShellEnvironmentPolicyToml, Tui,
+        UriBasedFileOpener,
+    },
+    git_info::resolve_root_git_project_for_trust,
+    model_family::{ModelFamily, derive_default_model_family, find_family_for_model},
+    model_provider_info::{ModelProviderInfo, built_in_model_providers},
+    openai_model_info::get_model_info,
+    protocol::{AskForApproval, SandboxPolicy},
+};
 use anyhow::Context;
-use codex_protocol::config_types::ReasoningEffort;
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::Verbosity;
-use codex_protocol::mcp_protocol::Tools;
-use codex_protocol::mcp_protocol::UserSavedConfig;
+use codex_protocol::{
+    config_types::{ReasoningEffort, ReasoningSummary, SandboxMode, Verbosity},
+    mcp_protocol::{Tools, UserSavedConfig},
+};
 use dirs::home_dir;
 use serde::Deserialize;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+};
 use tempfile::NamedTempFile;
 use toml::Value as TomlValue;
-use toml_edit::Array as TomlArray;
-use toml_edit::DocumentMut;
-use toml_edit::Item as TomlItem;
-use toml_edit::Table as TomlTable;
+use toml_edit::{Array as TomlArray, DocumentMut, Item as TomlItem, Table as TomlTable};
 
 const OPENAI_DEFAULT_MODEL: &str = "gpt-5-codex";
 const OPENAI_DEFAULT_REVIEW_MODEL: &str = "gpt-5-codex";
@@ -1177,8 +1165,7 @@ pub fn log_dir(cfg: &Config) -> std::io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config_types::HistoryPersistence;
-    use crate::config_types::Notifications;
+    use crate::config_types::{HistoryPersistence, Notifications};
 
     use super::*;
     use pretty_assertions::assert_eq;
