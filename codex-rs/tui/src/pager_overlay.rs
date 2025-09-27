@@ -855,32 +855,59 @@ impl PagerView {
         let mut advanced = false;
         while i >= limit_low && i <= limit_high {
             let li = i as usize;
-            // Adjust col based on glyph at this line
-            let ch_here = {
+            // Adjust column based on connector glyphs on this line, with small lookaround
+            let (cand_m1, cand_0, cand_p1) = {
                 let cache = match &self.wrap_cache {
                     Some(c) => c,
                     None => return,
                 };
-                Self::char_at_cell(&cache.wrapped_plain[li], col)
+                (
+                    Self::char_at_cell(&cache.wrapped_plain[li], col.saturating_sub(1)),
+                    Self::char_at_cell(&cache.wrapped_plain[li], col),
+                    Self::char_at_cell(&cache.wrapped_plain[li], col.saturating_add(1)),
+                )
             };
-            if let Some(ch) = ch_here {
-                match ch {
-                    '╱' => {
-                        if dir > 0 {
-                            col = col.saturating_add(1);
-                        } else {
-                            col = col.saturating_sub(1);
-                        }
-                    }
-                    '╲' => {
-                        if dir > 0 {
-                            col = col.saturating_sub(1);
-                        } else {
-                            col = col.saturating_add(1);
-                        }
-                    }
-                    _ => {}
+            let mut dcol: i32 = 0;
+            let pref = |c: Option<char>| c.unwrap_or(' ');
+            let c0 = pref(cand_0);
+            let cL = pref(cand_m1);
+            let cR = pref(cand_p1);
+            // Primary rules by glyph
+            match c0 {
+                '│' | '┼' | '╭' | '╮' | '╰' | '╯' => {
+                    dcol = 0;
                 }
+                '╱' => {
+                    dcol = if dir > 0 { 1 } else { -1 };
+                }
+                '╲' => {
+                    dcol = if dir > 0 { -1 } else { 1 };
+                }
+                _ => {
+                    // Fallback: prefer adjacent connectors
+                    if dir > 0 {
+                        if cR == '╱' {
+                            dcol = 1;
+                        } else if cL == '╲' {
+                            dcol = -1;
+                        } else if c0 == '─' {
+                            dcol = 0;
+                        }
+                    } else {
+                        if cL == '╱' {
+                            dcol = -1;
+                        } else if cR == '╲' {
+                            dcol = 1;
+                        } else if c0 == '─' {
+                            dcol = 0;
+                        }
+                    }
+                }
+            }
+            if dcol < 0 {
+                col = col.saturating_sub(1);
+            } else if dcol > 0 {
+                col = col.saturating_add(1);
             }
             // If this line has a commit at current col, stop
             let has_commit_here = {
