@@ -196,18 +196,18 @@ impl PagerView {
         };
 
         // In commit mode, decorate the selected commit by replacing the dot with '◉'.
-        if self.commit_mode {
-            if let Some(cl) = self.commit_cursor_line {
-                if cl >= page_start && cl < page_start + clipped.len() {
-                    let vis_idx = cl - page_start;
-                    let content_width = area.width.saturating_sub(gutter_cols).max(1) as usize;
-                    let rel_col = self
-                        .commit_cursor_col
-                        .saturating_sub(self.horiz_offset)
-                        .min(content_width.saturating_sub(1));
-                    clipped[vis_idx] = Self::decorate_commit_in_line(&clipped[vis_idx], rel_col);
-                }
-            }
+        if self.commit_mode
+            && let Some(cl) = self.commit_cursor_line
+            && cl >= page_start
+            && cl < page_start + clipped.len()
+        {
+            let vis_idx = cl - page_start;
+            let content_width = area.width.saturating_sub(gutter_cols).max(1) as usize;
+            let rel_col = self
+                .commit_cursor_col
+                .saturating_sub(self.horiz_offset)
+                .min(content_width.saturating_sub(1));
+            clipped[vis_idx] = Self::decorate_commit_in_line(&clipped[vis_idx], rel_col);
         }
 
         // Optionally prefix a gutter marker ("▸ ") on the focused line; otherwise two spaces.
@@ -274,7 +274,7 @@ impl PagerView {
 
         // If in "/"-search entry mode, show the prompt on the left side.
         if let Some(q) = &self.search_input {
-            let prompt = format!("/{}", q);
+            let prompt = format!("/{q}");
             let max_w = sep_rect.width.saturating_sub(pct_w).saturating_sub(2);
             let w = (prompt.chars().count() as u16).min(max_w);
             if w > 0 {
@@ -377,7 +377,7 @@ impl PagerView {
                 ..
             } => {
                 if self.commit_mode {
-                    self.move_to_nearby_commit(-1, 0, area.width, area.height);
+                    self.move_commit_vertical(-1, area.width, area.height);
                 } else {
                     if self.cursor_idx > 0 {
                         self.cursor_idx -= 1;
@@ -397,12 +397,12 @@ impl PagerView {
                 ..
             } => {
                 if self.commit_mode {
-                    self.move_to_nearby_commit(1, 0, area.width, area.height);
+                    self.move_commit_vertical(1, area.width, area.height);
                 } else {
-                    if let Some(cache) = self.wrap_cache.as_ref() {
-                        if self.cursor_idx + 1 < cache.wrapped.len() {
-                            self.cursor_idx += 1;
-                        }
+                    if let Some(cache) = self.wrap_cache.as_ref()
+                        && self.cursor_idx + 1 < cache.wrapped.len()
+                    {
+                        self.cursor_idx += 1;
                     }
                     self.ensure_cursor_visible(area.height as usize);
                 }
@@ -459,12 +459,12 @@ impl PagerView {
                 ..
             } => {
                 self.g_pending = false;
-                if let Some(cache) = self.wrap_cache.as_ref() {
-                    if !cache.wrapped.is_empty() {
-                        self.cursor_idx = cache.wrapped.len() - 1;
-                        self.ensure_cursor_visible(area.height as usize);
-                        self.last_match_idx = Some(self.cursor_idx);
-                    }
+                if let Some(cache) = self.wrap_cache.as_ref()
+                    && !cache.wrapped.is_empty()
+                {
+                    self.cursor_idx = cache.wrapped.len() - 1;
+                    self.ensure_cursor_visible(area.height as usize);
+                    self.last_match_idx = Some(self.cursor_idx);
                 }
             }
             KeyEvent {
@@ -514,13 +514,13 @@ impl PagerView {
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                if let Some(cache) = self.wrap_cache.as_ref() {
-                    if !cache.wrapped.is_empty() {
-                        self.cursor_idx = cache.wrapped.len() - 1;
-                        self.commit_cursor_line = None;
-                        self.commit_mode = false;
-                        self.ensure_cursor_visible(area.height as usize);
-                    }
+                if let Some(cache) = self.wrap_cache.as_ref()
+                    && !cache.wrapped.is_empty()
+                {
+                    self.cursor_idx = cache.wrapped.len() - 1;
+                    self.commit_cursor_line = None;
+                    self.commit_mode = false;
+                    self.ensure_cursor_visible(area.height as usize);
                 }
                 self.g_pending = false;
             }
@@ -557,7 +557,7 @@ impl PagerView {
                 ..
             } => {
                 if let Some(q) = self.last_search.clone() {
-                    let start = self.last_match_idx.unwrap_or_else(|| self.scroll_offset);
+                    let start = self.last_match_idx.unwrap_or(self.scroll_offset);
                     if let Some(idx) = self.find_prev_match(&q, start) {
                         self.cursor_idx = idx;
                         self.center_on(idx, area.height as usize);
@@ -751,7 +751,7 @@ impl PagerView {
         if q.is_empty() {
             return None;
         }
-        let smart_case = q.chars().any(|c| c.is_uppercase());
+        let smart_case = q.chars().any(char::is_uppercase);
         if smart_case {
             for (i, line) in cache.wrapped_plain.iter().enumerate().skip(start) {
                 if line.contains(q) {
@@ -775,7 +775,7 @@ impl PagerView {
             return None;
         }
         let end = start.min(cache.wrapped_plain.len());
-        let smart_case = q.chars().any(|c| c.is_uppercase());
+        let smart_case = q.chars().any(char::is_uppercase);
         if smart_case {
             for i in (0..end).rev() {
                 if cache.wrapped_plain[i].contains(q) {
@@ -810,6 +810,70 @@ impl PagerView {
                     .saturating_sub(viewport_height.saturating_sub(1));
             }
         }
+    }
+
+    /// Toggle into commit mode will call this to select nearest commit; already implemented above.
+    /// Move vertically along the branch route by following connecting glyphs.
+    fn move_commit_vertical(&mut self, dir: i32, viewport_width: u16, viewport_height: u16) {
+        if !self.commit_mode {
+            return;
+        }
+        let Some(cache) = &self.wrap_cache else { return; };
+        if self.commit_cursor_line.is_none() {
+            self.enter_commit_mode(viewport_width, viewport_height);
+        }
+        let Some(mut line) = self.commit_cursor_line else { return; };
+        let mut col = self.commit_cursor_col;
+        let step: i32 = if dir >= 0 { 1 } else { -1 };
+        let mut i = line as i64 + step as i64;
+        let limit_low: i64 = 0;
+        let limit_high: i64 = cache.wrapped_plain.len() as i64 - 1;
+        let mut advanced = false;
+        while i >= limit_low && i <= limit_high {
+            let li = i as usize;
+            // Adjust col based on glyph at this line
+            if let Some(ch) = Self::char_at_cell(&cache.wrapped_plain[li], col) {
+                match ch {
+                    '╱' => {
+                        if dir > 0 { col = col.saturating_add(1); } else { col = col.saturating_sub(1); }
+                    }
+                    '╲' => {
+                        if dir > 0 { col = col.saturating_sub(1); } else { col = col.saturating_add(1); }
+                    }
+                    _ => {}
+                }
+            }
+            // If this line has a commit at current col, stop
+            if let Some(cols) = cache.commit_cols.get(li) {
+                if cols.iter().any(|&c| c == col) {
+                    line = li;
+                    advanced = true;
+                    break;
+                }
+            }
+            i += step as i64;
+        }
+        if advanced {
+            self.commit_cursor_line = Some(line);
+            self.commit_cursor_col = col;
+            self.ensure_commit_visible(viewport_width, viewport_height);
+        } else {
+            // fallback to nearest logic if not found
+            self.move_to_nearby_commit(if dir > 0 { 1 } else { -1 }, 0, viewport_width, viewport_height);
+        }
+    }
+
+    /// Find char at visual column index in the given plain string.
+    fn char_at_cell(s: &str, target: usize) -> Option<char> {
+        use unicode_width::UnicodeWidthChar;
+        let mut col = 0usize;
+        for ch in s.chars() {
+            let w = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+            if col == target { return Some(ch); }
+            if target < col + w { return Some(ch); }
+            col += w;
+        }
+        None
     }
 
     fn ensure_commit_visible(&mut self, viewport_width: u16, viewport_height: u16) {
@@ -927,22 +991,22 @@ impl PagerView {
             let mut i = line as i64 + delta_lines as i64;
             while i >= 0 && (i as usize) < cache.commit_cols.len() {
                 let li = i as usize;
-                if let Some(cols) = cache.commit_cols.get(li) {
-                    if !cols.is_empty() {
-                        // pick nearest column
-                        let mut bestc = cols[0];
-                        let mut bestd = col.abs_diff(bestc);
-                        for &c in cols.iter().skip(1) {
-                            let d = col.abs_diff(c);
-                            if d < bestd {
-                                bestd = d;
-                                bestc = c;
-                            }
+                if let Some(cols) = cache.commit_cols.get(li)
+                    && !cols.is_empty()
+                {
+                    // pick nearest column
+                    let mut bestc = cols[0];
+                    let mut bestd = col.abs_diff(bestc);
+                    for &c in cols.iter().skip(1) {
+                        let d = col.abs_diff(c);
+                        if d < bestd {
+                            bestd = d;
+                            bestc = c;
                         }
-                        line = li;
-                        col = bestc;
-                        break;
                     }
+                    line = li;
+                    col = bestc;
+                    break;
                 }
                 i += delta_lines as i64;
             }
@@ -950,28 +1014,24 @@ impl PagerView {
 
         if delta_cols != 0 {
             // Move left/right among commits on the same line.
-            if let Some(cols) = cache.commit_cols.get(line) {
-                if !cols.is_empty() {
-                    // find current position index
-                    let mut idx = 0usize;
-                    for (k, &c) in cols.iter().enumerate() {
-                        if c >= col {
-                            idx = k;
-                            break;
-                        }
+            if let Some(cols) = cache.commit_cols.get(line)
+                && !cols.is_empty()
+            {
+                // find current position index
+                let mut idx = 0usize;
+                for (k, &c) in cols.iter().enumerate() {
+                    if c >= col {
                         idx = k;
+                        break;
                     }
-                    if delta_cols < 0 {
-                        if idx > 0 {
-                            idx -= 1;
-                        }
-                    } else if delta_cols > 0 {
-                        if idx + 1 < cols.len() {
-                            idx += 1;
-                        }
-                    }
-                    col = cols[idx];
+                    idx = k;
                 }
+                if delta_cols < 0 {
+                    idx = idx.saturating_sub(1);
+                } else if delta_cols > 0 && idx + 1 < cols.len() {
+                    idx += 1;
+                }
+                col = cols[idx];
             }
         }
 

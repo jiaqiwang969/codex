@@ -56,25 +56,28 @@ pub fn generate_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'stat
     // handles scrolling efficiently. This avoids surprising truncation in
     // larger repos where 50 commits isn't enough.
     let output = Command::new("git")
-        .args(&[
+        .args([
             "log",
             "--graph",
-            "--pretty=format:%C(auto)%h %s %C(green)(%cr) %C(bold blue)<%an>%C(reset)%C(auto)%d",
+            // Dim the commit hash and the author to visually de-emphasize them
+            // relative to the commit subject. We use ANSI SGR for dim (2/22)
+            // so it plays nicely with whatever colors git chooses.
+            "--pretty=format:%C(auto)\x1b[2m%h\x1b[22m %s %C(green)(%cr) \x1b[2m<%an>\x1b[22m%C(auto)%d",
             "--all",
             "--color=always",
             "--abbrev-commit",
         ])
         .current_dir(&repo_path)
         .output()
-        .map_err(|e| format!("Failed to execute git log: {}", e))?;
+        .map_err(|e| format!("Failed to execute git log: {e}"))?;
 
     if !output.status.success() {
         // Fallback to simpler git log if the above fails
         let fallback_output = Command::new("git")
-            .args(&["log", "--graph", "--oneline", "--all", "--color=always"])
+            .args(["log", "--graph", "--oneline", "--all", "--color=always"])
             .current_dir(&repo_path)
             .output()
-            .map_err(|e| format!("Failed to execute fallback git log: {}", e))?;
+            .map_err(|e| format!("Failed to execute fallback git log: {e}"))?;
 
         if !fallback_output.status.success() {
             return Err(format!(
@@ -139,7 +142,7 @@ fn generate_with_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'sta
         Some("none") => BranchSettingsDef::none(),
         _ => BranchSettingsDef::simple(),
     };
-    let branches = BranchSettings::from(model_def).map_err(|e| format!("settings error: {}", e))?;
+    let branches = BranchSettings::from(model_def).map_err(|e| format!("settings error: {e}"))?;
 
     // Use rounded characters, include remotes, and colored output like `--all --color`.
     let settings = Settings {
@@ -163,10 +166,101 @@ fn generate_with_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'sta
     let (g_lines, t_lines, _indices) = print_unicode(&graph, &settings)?;
 
     // Join graph and text columns, then parse ANSI into ratatui Line.
+    // For the embedded printer path, post-process the text column to dim the
+    // commit hash (first token) and the author section (e.g., "<name>") so
+    // the commit subject stands out.
+    fn dim_hash_and_author(s: &str) -> String {
+        // Insert dim (ESC[2m) at the first visible character (skipping any
+        // leading ANSI), and end dim (ESC[22m) before the first following
+        // visible whitespace. Then, if present, also wrap the first
+        // angle-bracketed author section with dim toggles.
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        let len = bytes.len();
+        // Helper to skip a CSI sequence starting at ESC
+        let skip_ansi = |idx: &mut usize| {
+            if *idx < len && bytes[*idx] == 0x1b {
+                *idx += 1;
+                if *idx < len && bytes[*idx] == b'[' {
+                    *idx += 1;
+                    while *idx < len && bytes[*idx] != b'm' {
+                        *idx += 1;
+                    }
+                    if *idx < len {
+                        *idx += 1;
+                    }
+                }
+            }
+        };
+
+        // Find first visible, non-space character
+        while i < len {
+            if bytes[i] == 0x1b {
+                skip_ansi(&mut i);
+                continue;
+            }
+            let ch = bytes[i] as char;
+            if ch.is_whitespace() {
+                i += 1;
+                continue;
+            }
+            break;
+        }
+
+        // If nothing visible, return original
+        if i >= len {
+            return s.to_string();
+        }
+
+        let start = i;
+        // Find end of the first token (up to next visible whitespace)
+        while i < len {
+            if bytes[i] == 0x1b {
+                skip_ansi(&mut i);
+                continue;
+            }
+            let ch = bytes[i] as char;
+            if ch.is_whitespace() {
+                break;
+            }
+            i += 1;
+        }
+        let end = i;
+
+        // Compose with dim around [start, end)
+        let mut out = String::with_capacity(s.len() + 16);
+        out.push_str(&s[..start]);
+        out.push_str("\x1b[2m");
+        out.push_str(&s[start..end]);
+        out.push_str("\x1b[22m");
+        out.push_str(&s[end..]);
+
+        // Now dim the first "<...>" block if present.
+        if let Some(a_start) = out.find('<')
+            && let Some(a_end_rel) = out[a_start..].find('>')
+        {
+            let a_end = a_start + a_end_rel;
+            if a_end > a_start {
+                let mut final_out = String::with_capacity(out.len() + 16);
+                final_out.push_str(&out[..a_start]);
+                final_out.push_str("\x1b[2m");
+                final_out.push_str(&out[a_start..=a_end]);
+                final_out.push_str("\x1b[22m");
+                final_out.push_str(&out[a_end + 1..]);
+                return final_out;
+            }
+        }
+
+        out
+    }
+
     let lines: Vec<Line<'static>> = g_lines
         .into_iter()
-        .zip(t_lines.into_iter())
-        .map(|(g, t)| ansi_escape_line(&format!(" {g}  {t}")))
+        .zip(t_lines)
+        .map(|(g, t)| {
+            let t = dim_hash_and_author(&t);
+            ansi_escape_line(&format!(" {g}  {t}"))
+        })
         .collect();
     Ok(lines)
 }

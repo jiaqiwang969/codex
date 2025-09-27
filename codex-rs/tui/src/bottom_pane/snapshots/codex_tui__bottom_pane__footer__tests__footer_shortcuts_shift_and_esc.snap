@@ -4,4 +4,4 @@ expression: terminal.backend()
 ---
 "  / for commands          shift + enter for newline      shift + tab to change m"
 "  @ for file paths        ctrl + v to paste images       esc again to edit previ"
-"  ctrl + c to exit        ctrl + t to view transcript                           "
+"  ctrl + c to exit        ctrl + t to view transcript    ctrl + g to view git gr"
