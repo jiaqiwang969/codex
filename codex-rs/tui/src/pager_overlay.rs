@@ -422,14 +422,14 @@ impl PagerView {
                 }
                 self.g_pending = false;
             }
-            // Horizontal scroll or commit-column navigation
+            // Horizontal scroll or commit-branch navigation
             KeyEvent {
                 code: KeyCode::Char('h'),
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
                 if self.commit_mode {
-                    self.move_to_nearby_commit(0, -1, area.width, area.height);
+                    self.move_commit_horizontal(-1, area.width, area.height);
                 } else {
                     self.horiz_offset = self.horiz_offset.saturating_sub(1);
                 }
@@ -440,7 +440,7 @@ impl PagerView {
                 ..
             } => {
                 if self.commit_mode {
-                    self.move_to_nearby_commit(0, 1, area.width, area.height);
+                    self.move_commit_horizontal(1, area.width, area.height);
                 } else {
                     self.horiz_offset = self.horiz_offset.saturating_add(1);
                 }
@@ -842,15 +842,25 @@ impl PagerView {
         let step: i32 = if dir >= 0 { 1 } else { -1 };
         // perform scanning in a limited-scope borrow to avoid conflicts with later &mut self calls
         let (mut i, limit_low, limit_high) = {
-            let cache = match &self.wrap_cache { Some(c) => c, None => return };
-            (line as i64 + step as i64, 0i64, cache.wrapped_plain.len() as i64 - 1)
+            let cache = match &self.wrap_cache {
+                Some(c) => c,
+                None => return,
+            };
+            (
+                line as i64 + step as i64,
+                0i64,
+                cache.wrapped_plain.len() as i64 - 1,
+            )
         };
         let mut advanced = false;
         while i >= limit_low && i <= limit_high {
             let li = i as usize;
             // Adjust col based on glyph at this line
             let ch_here = {
-                let cache = match &self.wrap_cache { Some(c) => c, None => return };
+                let cache = match &self.wrap_cache {
+                    Some(c) => c,
+                    None => return,
+                };
                 Self::char_at_cell(&cache.wrapped_plain[li], col)
             };
             if let Some(ch) = ch_here {
@@ -874,7 +884,10 @@ impl PagerView {
             }
             // If this line has a commit at current col, stop
             let has_commit_here = {
-                let cache = match &self.wrap_cache { Some(c) => c, None => return };
+                let cache = match &self.wrap_cache {
+                    Some(c) => c,
+                    None => return,
+                };
                 cache
                     .commit_cols
                     .get(li)
@@ -1082,6 +1095,49 @@ impl PagerView {
         self.commit_cursor_line = Some(line);
         self.commit_cursor_col = col;
         self.ensure_commit_visible(viewport_width, viewport_height);
+    }
+
+    /// Move to nearest commit on an adjacent branch to the left (dir < 0) or right (dir > 0).
+    /// Preference: minimize horizontal distance first, then vertical distance from the current commit.
+    fn move_commit_horizontal(&mut self, dir: i32, viewport_width: u16, viewport_height: u16) {
+        if !self.commit_mode {
+            return;
+        }
+        if self.commit_cursor_line.is_none() {
+            self.enter_commit_mode(viewport_width, viewport_height);
+        }
+        let Some(line0) = self.commit_cursor_line else {
+            return;
+        };
+        let col0 = self.commit_cursor_col;
+        let mut best_line: Option<usize> = None;
+        let mut best_col: usize = 0;
+        let mut best_dx: usize = usize::MAX;
+        let mut best_dy: usize = usize::MAX;
+        if let Some(cache) = &self.wrap_cache {
+            for (li, cols) in cache.commit_cols.iter().enumerate() {
+                for &c in cols {
+                    if (dir < 0 && c < col0) || (dir > 0 && c > col0) {
+                        let dx = if c > col0 { c - col0 } else { col0 - c };
+                        if dx == 0 {
+                            continue;
+                        }
+                        let dy = if li > line0 { li - line0 } else { line0 - li };
+                        if dx < best_dx || (dx == best_dx && dy < best_dy) {
+                            best_dx = dx;
+                            best_dy = dy;
+                            best_line = Some(li);
+                            best_col = c;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(li) = best_line {
+            self.commit_cursor_line = Some(li);
+            self.commit_cursor_col = best_col;
+            self.ensure_commit_visible(viewport_width, viewport_height);
+        }
     }
 
     /// Clip a styled line horizontally given a starting column and width; preserves styles.
