@@ -131,6 +131,10 @@ impl PagerView {
         let content_area = self.scroll_area(area);
         self.update_last_content_height(content_area.height);
         self.ensure_wrapped(content_area.width);
+        // Auto-enter commit mode on first render if requested but not yet positioned
+        if self.commit_mode && self.commit_cursor_line.is_none() {
+            self.enter_commit_mode(content_area.width, content_area.height);
+        }
         // If there is a pending request to scroll a specific chunk into view,
         // satisfy it now that wrapping is up to date for this width.
         if let (Some(idx), Some(cache)) =
@@ -350,34 +354,12 @@ impl PagerView {
         }
 
         match key_event {
-            // ESC exits commit mode (but keeps overlay open)
+            // Ignore Enter/Esc for mode toggling; commit mode is active by default in Git Graph overlay
             KeyEvent {
-                code: KeyCode::Esc,
+                code: KeyCode::Enter | KeyCode::Esc,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                if self.commit_mode {
-                    self.commit_mode = false;
-                    self.commit_cursor_line = None;
-                    tui.frame_requester()
-                        .schedule_frame_in(Duration::from_millis(16));
-                    return Ok(());
-                }
-            }
-            // Toggle commit-navigation mode on Enter (when not in search input)
-            KeyEvent {
-                code: KeyCode::Enter,
-                kind: KeyEventKind::Press,
-                ..
-            } => {
-                if self.commit_mode {
-                    self.commit_mode = false;
-                    self.commit_cursor_line = None;
-                } else {
-                    self.enter_commit_mode(area.width, area.height);
-                }
-                tui.frame_requester()
-                    .schedule_frame_in(Duration::from_millis(16));
                 return Ok(());
             }
             KeyEvent {
@@ -855,7 +837,7 @@ impl PagerView {
         let mut advanced = false;
         while i >= limit_low && i <= limit_high {
             let li = i as usize;
-            // Adjust column based on connector glyphs on this line, with small lookaround
+            // Adjust column based on connector glyphs on this line, with small lookaround + 1–2 line lookahead
             let (cand_m1, cand_0, cand_p1) = {
                 let cache = match &self.wrap_cache {
                     Some(c) => c,
@@ -872,34 +854,31 @@ impl PagerView {
             let c0 = pref(cand_0);
             let cL = pref(cand_m1);
             let cR = pref(cand_p1);
-            // Primary rules by glyph
+            // Primary rules by glyph; otherwise evaluate candidates by lookahead scoring
+            let mut ambiguous = false;
             match c0 {
-                '│' | '┼' | '╭' | '╮' | '╰' | '╯' => {
-                    dcol = 0;
-                }
-                '╱' => {
-                    dcol = if dir > 0 { 1 } else { -1 };
-                }
-                '╲' => {
-                    dcol = if dir > 0 { -1 } else { 1 };
-                }
-                _ => {
-                    // Fallback: prefer adjacent connectors
+                '│' | '╭' | '╮' | '╰' | '╯' => dcol = 0,
+                '╱' => dcol = if dir > 0 { 1 } else { -1 },
+                '╲' => dcol = if dir > 0 { -1 } else { 1 },
+                '┼' | '─' | ' ' => ambiguous = true,
+                _ => ambiguous = true,
+            }
+            if ambiguous {
+                let best = self.choose_dcol_with_lookahead(li, col, dir, 2 /*lines*/);
+                dcol = best;
+                if dcol == 0 {
+                    // still ambiguous: use adjacent hints
                     if dir > 0 {
                         if cR == '╱' {
                             dcol = 1;
                         } else if cL == '╲' {
                             dcol = -1;
-                        } else if c0 == '─' {
-                            dcol = 0;
                         }
                     } else {
                         if cL == '╱' {
                             dcol = -1;
                         } else if cR == '╲' {
                             dcol = 1;
-                        } else if c0 == '─' {
-                            dcol = 0;
                         }
                     }
                 }
@@ -941,6 +920,98 @@ impl PagerView {
                 viewport_height,
             );
         }
+    }
+
+    /// Choose initial horizontal delta (-1,0,1) by simulating up to `lookahead` lines and
+    /// selecting the path that reaches a commit in fewer steps; on ties, prefer straight (0), then smaller lateral.
+    fn choose_dcol_with_lookahead(
+        &self,
+        line_idx: usize,
+        col: usize,
+        dir: i32,
+        lookahead: usize,
+    ) -> i32 {
+        let mut best_dcol = 0;
+        let mut best_steps = usize::MAX;
+        let mut best_lateral = usize::MAX;
+        for &dcol in &[-1, 0, 1] {
+            let (steps, lateral) = self.simulate_to_commit(line_idx, col, dir, dcol, lookahead);
+            if steps < best_steps
+                || (steps == best_steps
+                    && (lateral < best_lateral || (lateral == best_lateral && dcol == 0)))
+            {
+                best_steps = steps;
+                best_lateral = lateral;
+                best_dcol = dcol;
+            }
+        }
+        best_dcol
+    }
+
+    /// Simulate advancing from (line_idx, col) with an initial dcol, for up to `lookahead` lines.
+    /// Return (steps_to_commit_or_max, total_lateral_displacement).
+    fn simulate_to_commit(
+        &self,
+        line_idx: usize,
+        col: usize,
+        dir: i32,
+        init_dcol: i32,
+        lookahead: usize,
+    ) -> (usize, usize) {
+        let mut col_cur = if init_dcol < 0 {
+            col.saturating_sub(1)
+        } else if init_dcol > 0 {
+            col.saturating_add(1)
+        } else {
+            col
+        };
+        let mut lateral = col_cur.abs_diff(col);
+        for step in 1..=lookahead {
+            let li = if dir > 0 {
+                line_idx + step
+            } else if line_idx >= step {
+                line_idx - step
+            } else {
+                return (usize::MAX, lateral);
+            };
+            let cache = match &self.wrap_cache {
+                Some(c) => c,
+                None => return (usize::MAX, lateral),
+            };
+            if li >= cache.wrapped_plain.len() {
+                return (usize::MAX, lateral);
+            }
+            // Adjust column based on glyph at this line
+            if let Some(ch) = Self::char_at_cell(&cache.wrapped_plain[li], col_cur) {
+                match ch {
+                    '╱' => {
+                        col_cur = if dir > 0 {
+                            col_cur.saturating_add(1)
+                        } else {
+                            col_cur.saturating_sub(1)
+                        };
+                    }
+                    '╲' => {
+                        col_cur = if dir > 0 {
+                            col_cur.saturating_sub(1)
+                        } else {
+                            col_cur.saturating_add(1)
+                        };
+                    }
+                    _ => {}
+                }
+                lateral = lateral.max(col_cur.abs_diff(col));
+            }
+            if cache
+                .commit_cols
+                .get(li)
+                .map(|cols| cols.iter().any(|&c| c == col_cur))
+                .unwrap_or(false)
+            {
+                return (step, lateral);
+            }
+        }
+        (usize::MAX, lateral)
     }
 
     /// Find char at visual column index in the given plain string.
@@ -1410,6 +1481,7 @@ impl StaticOverlay {
         };
         s.view.wrap_mode = WrapMode::NoWrap;
         s.view.show_cursor_gutter = true;
+        s.view.commit_mode = true; // Always start Git Graph in commit navigation mode
         s
     }
 
