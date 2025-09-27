@@ -95,6 +95,11 @@ struct PagerView {
     horiz_offset: usize,
     /// Whether to render a left gutter with a cursor marker on the focused line.
     show_cursor_gutter: bool,
+    /// Commit-navigation mode toggle.
+    commit_mode: bool,
+    /// Current selected commit (wrapped line index, and global column in cells).
+    commit_cursor_line: Option<usize>,
+    commit_cursor_col: usize,
 }
 
 impl PagerView {
@@ -114,6 +119,9 @@ impl PagerView {
             wrap_mode: WrapMode::WordWrap,
             horiz_offset: 0,
             show_cursor_gutter: false,
+            commit_mode: false,
+            commit_cursor_line: None,
+            commit_cursor_col: 0,
         }
     }
 
@@ -178,7 +186,7 @@ impl PagerView {
         Clear.render(area, buf);
         // Horizontal clipping when in NoWrap mode, accounting for an optional left gutter.
         let gutter_cols: u16 = if self.show_cursor_gutter { 2 } else { 0 };
-        let clipped: Vec<Line<'static>> = if self.wrap_mode == WrapMode::NoWrap {
+        let mut clipped: Vec<Line<'static>> = if self.wrap_mode == WrapMode::NoWrap {
             let content_width = area.width.saturating_sub(gutter_cols).max(1) as usize;
             page.iter()
                 .map(|l| self.clip_line(l, self.horiz_offset, content_width))
@@ -186,6 +194,21 @@ impl PagerView {
         } else {
             page.to_vec()
         };
+
+        // In commit mode, decorate the selected commit by replacing the dot with '◉'.
+        if self.commit_mode {
+            if let Some(cl) = self.commit_cursor_line {
+                if cl >= page_start && cl < page_start + clipped.len() {
+                    let vis_idx = cl - page_start;
+                    let content_width = area.width.saturating_sub(gutter_cols).max(1) as usize;
+                    let rel_col = self
+                        .commit_cursor_col
+                        .saturating_sub(self.horiz_offset)
+                        .min(content_width.saturating_sub(1));
+                    clipped[vis_idx] = Self::decorate_commit_in_line(&clipped[vis_idx], rel_col);
+                }
+            }
+        }
 
         // Optionally prefix a gutter marker ("▸ ") on the focused line; otherwise two spaces.
         let lines: Vec<Line<'static>> = if self.show_cursor_gutter {
@@ -327,6 +350,22 @@ impl PagerView {
         }
 
         match key_event {
+            // Toggle commit-navigation mode on Enter (when not in search input)
+            KeyEvent {
+                code: KeyCode::Enter,
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                if self.commit_mode {
+                    self.commit_mode = false;
+                    self.commit_cursor_line = None;
+                } else {
+                    self.enter_commit_mode(area.width, area.height);
+                }
+                tui.frame_requester()
+                    .schedule_frame_in(Duration::from_millis(16));
+                return Ok(());
+            }
             KeyEvent {
                 code: KeyCode::Up,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
@@ -337,10 +376,14 @@ impl PagerView {
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                if self.cursor_idx > 0 {
-                    self.cursor_idx -= 1;
+                if self.commit_mode {
+                    self.move_to_nearby_commit(-1, 0, area.width, area.height);
+                } else {
+                    if self.cursor_idx > 0 {
+                        self.cursor_idx -= 1;
+                    }
+                    self.ensure_cursor_visible(area.height as usize);
                 }
-                self.ensure_cursor_visible(area.height as usize);
                 self.g_pending = false;
             }
             KeyEvent {
@@ -353,13 +396,47 @@ impl PagerView {
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {
-                if let Some(cache) = self.wrap_cache.as_ref() {
-                    if self.cursor_idx + 1 < cache.wrapped.len() {
-                        self.cursor_idx += 1;
+                if self.commit_mode {
+                    self.move_to_nearby_commit(1, 0, area.width, area.height);
+                } else {
+                    if let Some(cache) = self.wrap_cache.as_ref() {
+                        if self.cursor_idx + 1 < cache.wrapped.len() {
+                            self.cursor_idx += 1;
+                        }
                     }
+                    self.ensure_cursor_visible(area.height as usize);
                 }
-                self.ensure_cursor_visible(area.height as usize);
                 self.g_pending = false;
+            }
+            // Horizontal scroll or commit-column navigation
+            KeyEvent {
+                code: KeyCode::Char('h'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                if self.commit_mode {
+                    self.move_to_nearby_commit(0, -1, area.width, area.height);
+                } else {
+                    self.horiz_offset = self.horiz_offset.saturating_sub(1);
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Char('l'),
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                if self.commit_mode {
+                    self.move_to_nearby_commit(0, 1, area.width, area.height);
+                } else {
+                    self.horiz_offset = self.horiz_offset.saturating_add(1);
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Char('0'),
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                self.horiz_offset = 0;
             }
             // Vim-like jumps: gg to top, G to bottom
             KeyEvent {
@@ -396,8 +473,12 @@ impl PagerView {
                 ..
             } => {
                 let page = area.height as usize;
-                self.cursor_idx = self.cursor_idx.saturating_sub(page);
-                self.ensure_cursor_visible(page);
+                if self.commit_mode {
+                    self.move_to_nearby_commit(-(page as isize) as i32, 0, area.width, area.height);
+                } else {
+                    self.cursor_idx = self.cursor_idx.saturating_sub(page);
+                    self.ensure_cursor_visible(page);
+                }
                 self.g_pending = false;
             }
             KeyEvent {
@@ -408,8 +489,12 @@ impl PagerView {
                 if let Some(cache) = self.wrap_cache.as_ref() {
                     let page = area.height as usize;
                     let last = cache.wrapped.len().saturating_sub(1);
-                    self.cursor_idx = (self.cursor_idx + page).min(last);
-                    self.ensure_cursor_visible(page);
+                    if self.commit_mode {
+                        self.move_to_nearby_commit(page as i32, 0, area.width, area.height);
+                    } else {
+                        self.cursor_idx = (self.cursor_idx + page).min(last);
+                        self.ensure_cursor_visible(page);
+                    }
                 }
                 self.g_pending = false;
             }
@@ -419,6 +504,8 @@ impl PagerView {
                 ..
             } => {
                 self.cursor_idx = 0;
+                self.commit_cursor_line = None;
+                self.commit_mode = false;
                 self.ensure_cursor_visible(area.height as usize);
                 self.g_pending = false;
             }
@@ -430,6 +517,8 @@ impl PagerView {
                 if let Some(cache) = self.wrap_cache.as_ref() {
                     if !cache.wrapped.is_empty() {
                         self.cursor_idx = cache.wrapped.len() - 1;
+                        self.commit_cursor_line = None;
+                        self.commit_mode = false;
                         self.ensure_cursor_visible(area.height as usize);
                     }
                 }
@@ -508,6 +597,8 @@ struct WrapCache {
     base_len: usize,
     /// Plain text for wrapped lines, used for searches.
     wrapped_plain: Vec<String>,
+    /// Column positions of commit nodes per wrapped line (in cells, pre-clip).
+    commit_cols: Vec<Vec<usize>>,
 }
 
 impl PagerView {
@@ -522,6 +613,7 @@ impl PagerView {
         }
         let mut wrapped: Vec<Line<'static>> = Vec::new();
         let mut wrapped_plain: Vec<String> = Vec::new();
+        let mut commit_cols: Vec<Vec<usize>> = Vec::new();
         let mut chunk_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.texts.len());
         for text in &self.texts {
             let start = wrapped.len();
@@ -531,13 +623,17 @@ impl PagerView {
                         let ws = crate::wrapping::word_wrap_line(line, width as usize);
                         push_owned_lines(&ws, &mut wrapped);
                         for l in &ws {
-                            wrapped_plain.push(Self::plain_text(l));
+                            let p = Self::plain_text(l);
+                            wrapped_plain.push(p.clone());
+                            commit_cols.push(Self::scan_commit_cols(&p));
                         }
                     }
                     WrapMode::NoWrap => {
                         // Do not wrap; use the line as-is (owned). Horizontal clipping is applied at render time.
                         push_owned_lines(&[line.clone()], &mut wrapped);
-                        wrapped_plain.push(Self::plain_text(line));
+                        let p = Self::plain_text(line);
+                        wrapped_plain.push(p.clone());
+                        commit_cols.push(Self::scan_commit_cols(&p));
                     }
                 }
             }
@@ -550,6 +646,7 @@ impl PagerView {
             chunk_ranges,
             base_len: self.texts.len(),
             wrapped_plain,
+            commit_cols,
         });
     }
 
@@ -616,6 +713,21 @@ impl PagerView {
             s.push_str(sp.content.as_ref());
         }
         s
+    }
+
+    /// Return column positions (cells) of commit dots in a plain string.
+    fn scan_commit_cols(s: &str) -> Vec<usize> {
+        use unicode_width::UnicodeWidthChar;
+        let mut cols = Vec::new();
+        let mut col = 0usize;
+        for ch in s.chars() {
+            let w = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+            if ch == '●' || ch == '○' {
+                cols.push(col);
+            }
+            col += w;
+        }
+        cols
     }
 
     /// Center the viewport on a given wrapped line index.
@@ -700,6 +812,174 @@ impl PagerView {
         }
     }
 
+    fn ensure_commit_visible(&mut self, viewport_width: u16, viewport_height: u16) {
+        if !self.commit_mode {
+            return;
+        }
+        let Some(line) = self.commit_cursor_line else {
+            return;
+        };
+        self.cursor_idx = line;
+        self.ensure_cursor_visible(viewport_height as usize);
+        // Adjust horizontal offset so that the commit column is visible.
+        let content_width =
+            viewport_width.saturating_sub(if self.show_cursor_gutter { 2 } else { 0 });
+        if content_width == 0 {
+            return;
+        }
+        let right_edge = self.horiz_offset + content_width as usize - 1;
+        if self.commit_cursor_col < self.horiz_offset {
+            self.horiz_offset = self.commit_cursor_col;
+        } else if self.commit_cursor_col > right_edge {
+            self.horiz_offset = self
+                .commit_cursor_col
+                .saturating_sub(content_width as usize - 1);
+        }
+    }
+
+    fn enter_commit_mode(&mut self, viewport_width: u16, viewport_height: u16) {
+        self.commit_mode = true;
+        // Pick nearest commit in the current viewport; fallback to anywhere.
+        let Some(cache) = &self.wrap_cache else {
+            return;
+        };
+        let top = self.scroll_offset;
+        let bottom = top
+            .saturating_add(viewport_height as usize)
+            .saturating_sub(1);
+        let mut best: Option<(usize, usize)> = None; // (line, distance)
+        for i in top..=bottom.min(cache.commit_cols.len().saturating_sub(1)) {
+            if !cache
+                .commit_cols
+                .get(i)
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let dist = self.cursor_idx.abs_diff(i);
+            if best.map(|(_, d)| dist < d).unwrap_or(true) {
+                best = Some((i, dist));
+            }
+        }
+        if best.is_none() {
+            for i in 0..cache.commit_cols.len() {
+                if cache
+                    .commit_cols
+                    .get(i)
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false)
+                {
+                    best = Some((i, self.cursor_idx.abs_diff(i)));
+                    break;
+                }
+            }
+        }
+        if let Some((line, _)) = best {
+            self.commit_cursor_line = Some(line);
+            // Choose a column: nearest to previous commit col if any; otherwise first
+            let cols = cache.commit_cols.get(line).cloned().unwrap_or_default();
+            if cols.is_empty() {
+                self.commit_cursor_col = 0;
+            } else if self.commit_cursor_col == 0 {
+                self.commit_cursor_col = cols[0];
+            } else {
+                // nearest to previous
+                let mut bestc = cols[0];
+                let mut bestd = self.commit_cursor_col.abs_diff(bestc);
+                for c in cols.into_iter().skip(1) {
+                    let d = self.commit_cursor_col.abs_diff(c);
+                    if d < bestd {
+                        bestd = d;
+                        bestc = c;
+                    }
+                }
+                self.commit_cursor_col = bestc;
+            }
+            self.ensure_commit_visible(viewport_width, viewport_height);
+        } else {
+            // No commits; leave mode
+            self.commit_mode = false;
+            self.commit_cursor_line = None;
+        }
+    }
+
+    /// Move commit selection by delta lines/columns; adjust visibility accordingly.
+    fn move_to_nearby_commit(
+        &mut self,
+        delta_lines: i32,
+        delta_cols: i32,
+        viewport_width: u16,
+        viewport_height: u16,
+    ) {
+        let Some(cache) = &self.wrap_cache else {
+            return;
+        };
+        if !self.commit_mode {
+            return;
+        }
+        // Initialize from cursor if unset
+        let mut line = self.commit_cursor_line.unwrap_or(self.cursor_idx);
+        let mut col = self.commit_cursor_col;
+
+        if delta_lines != 0 {
+            // Move to next/prev line that has commits; choose nearest column.
+            let mut i = line as i64 + delta_lines as i64;
+            while i >= 0 && (i as usize) < cache.commit_cols.len() {
+                let li = i as usize;
+                if let Some(cols) = cache.commit_cols.get(li) {
+                    if !cols.is_empty() {
+                        // pick nearest column
+                        let mut bestc = cols[0];
+                        let mut bestd = col.abs_diff(bestc);
+                        for &c in cols.iter().skip(1) {
+                            let d = col.abs_diff(c);
+                            if d < bestd {
+                                bestd = d;
+                                bestc = c;
+                            }
+                        }
+                        line = li;
+                        col = bestc;
+                        break;
+                    }
+                }
+                i += delta_lines as i64;
+            }
+        }
+
+        if delta_cols != 0 {
+            // Move left/right among commits on the same line.
+            if let Some(cols) = cache.commit_cols.get(line) {
+                if !cols.is_empty() {
+                    // find current position index
+                    let mut idx = 0usize;
+                    for (k, &c) in cols.iter().enumerate() {
+                        if c >= col {
+                            idx = k;
+                            break;
+                        }
+                        idx = k;
+                    }
+                    if delta_cols < 0 {
+                        if idx > 0 {
+                            idx -= 1;
+                        }
+                    } else if delta_cols > 0 {
+                        if idx + 1 < cols.len() {
+                            idx += 1;
+                        }
+                    }
+                    col = cols[idx];
+                }
+            }
+        }
+
+        self.commit_cursor_line = Some(line);
+        self.commit_cursor_col = col;
+        self.ensure_commit_visible(viewport_width, viewport_height);
+    }
+
     /// Clip a styled line horizontally given a starting column and width; preserves styles.
     fn clip_line(&self, line: &Line<'_>, start_col: usize, width: usize) -> Line<'static> {
         use ratatui::text::Span;
@@ -743,6 +1023,39 @@ impl PagerView {
             }
         }
         Line::from(out_spans).style(line.style)
+    }
+
+    /// Replace a commit dot at the given visible column with '◉' (white), preserving surrounding styles.
+    fn decorate_commit_in_line(line: &Line<'_>, vis_col: usize) -> Line<'static> {
+        use ratatui::text::Span;
+        use unicode_width::UnicodeWidthChar;
+        let mut out_spans: Vec<Span<'static>> = Vec::new();
+        let mut col = 0usize;
+        for s in &line.spans {
+            let text = s.content.as_ref();
+            if text.is_empty() {
+                continue;
+            }
+            let mut buf = String::new();
+            for ch in text.chars() {
+                let w = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+                if col == vis_col && (ch == '●' || ch == '○') {
+                    // Flush existing buffer
+                    if !buf.is_empty() {
+                        out_spans.push(Span::from(buf.clone()).set_style(s.style));
+                        buf.clear();
+                    }
+                    out_spans.push(Span::from("◉").white());
+                } else {
+                    buf.push(ch);
+                }
+                col += w;
+            }
+            if !buf.is_empty() {
+                out_spans.push(Span::from(buf).set_style(s.style));
+            }
+        }
+        Line::from(out_spans)
     }
 }
 
