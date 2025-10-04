@@ -24,8 +24,65 @@ impl Overlay {
         Self::Static(StaticOverlay::with_title(lines, title))
     }
 
+    /// Alias for new_static_with_title for compatibility with origin/main
+    pub(crate) fn new_static_with_lines(lines: Vec<Line<'static>>, title: String) -> Self {
+        Self::new_static_with_title(lines, title)
+    }
+
     pub(crate) fn new_static_with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
         Self::Static(StaticOverlay::with_title_no_wrap(lines, title))
+    }
+
+    /// Renders renderables to lines and displays them
+    /// This is a compatibility shim for origin/main's new API
+    pub(crate) fn new_static_with_renderables(
+        renderables: Vec<Box<dyn crate::render::renderable::Renderable>>,
+        title: String,
+    ) -> Self {
+        use ratatui::{buffer::Buffer, layout::Rect};
+
+        // Render each renderable to a temporary buffer and extract lines
+        let mut all_lines: Vec<Line<'static>> = Vec::new();
+        let width = 120; // Use a reasonable default width for rendering
+
+        for renderable in renderables {
+            let height = renderable.desired_height(width);
+            let area = Rect::new(0, 0, width, height);
+            let mut buf = Buffer::empty(area);
+            renderable.render(area, &mut buf);
+
+            // Extract lines from buffer
+            for y in 0..height {
+                let mut line_spans: Vec<ratatui::text::Span<'static>> = Vec::new();
+                let mut current_text = String::new();
+                let mut current_style = ratatui::style::Style::default();
+
+                for x in 0..width {
+                    let cell = &buf[(x, y)];
+                    let cell_style = cell.style();
+
+                    if cell_style != current_style && !current_text.is_empty() {
+                        line_spans.push(ratatui::text::Span::styled(
+                            std::mem::take(&mut current_text),
+                            current_style,
+                        ));
+                        current_style = cell_style;
+                    } else if current_style != cell_style {
+                        current_style = cell_style;
+                    }
+
+                    current_text.push_str(cell.symbol());
+                }
+
+                if !current_text.is_empty() {
+                    line_spans.push(ratatui::text::Span::styled(current_text, current_style));
+                }
+
+                all_lines.push(Line::from(line_spans));
+            }
+        }
+
+        Self::new_static_with_title(all_lines, title)
     }
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
