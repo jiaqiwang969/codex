@@ -1,32 +1,55 @@
-use crate::{
-    config_profile::ConfigProfile,
-    config_types::{
-        History, McpServerConfig, McpServerTransportConfig, Notifications, ReasoningSummaryFormat,
-        SandboxWorkspaceWrite, ShellEnvironmentPolicy, ShellEnvironmentPolicyToml, Tui,
-        UriBasedFileOpener,
-    },
-    git_info::resolve_root_git_project_for_trust,
-    model_family::{ModelFamily, derive_default_model_family, find_family_for_model},
-    model_provider_info::{ModelProviderInfo, built_in_model_providers},
-    openai_model_info::get_model_info,
-    protocol::{AskForApproval, SandboxPolicy},
-};
+use crate::config_loader::LoadedConfigLayers;
+pub use crate::config_loader::load_config_as_toml;
+use crate::config_loader::load_config_layers_with_overrides;
+use crate::config_loader::merge_toml_values;
+use crate::config_profile::ConfigProfile;
+use crate::config_types::DEFAULT_OTEL_ENVIRONMENT;
+use crate::config_types::History;
+use crate::config_types::McpServerConfig;
+use crate::config_types::McpServerTransportConfig;
+use crate::config_types::Notifications;
+use crate::config_types::OtelConfig;
+use crate::config_types::OtelConfigToml;
+use crate::config_types::OtelExporterKind;
+use crate::config_types::ReasoningSummaryFormat;
+use crate::config_types::SandboxWorkspaceWrite;
+use crate::config_types::ShellEnvironmentPolicy;
+use crate::config_types::ShellEnvironmentPolicyToml;
+use crate::config_types::Tui;
+use crate::config_types::UriBasedFileOpener;
+use crate::git_info::resolve_root_git_project_for_trust;
+use crate::model_family::ModelFamily;
+use crate::model_family::derive_default_model_family;
+use crate::model_family::find_family_for_model;
+use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::built_in_model_providers;
+use crate::openai_model_info::get_model_info;
+use crate::protocol::AskForApproval;
+use crate::protocol::SandboxPolicy;
 use anyhow::Context;
-use codex_protocol::{
-    config_types::{ReasoningEffort, ReasoningSummary, SandboxMode, Verbosity},
-    mcp_protocol::{Tools, UserSavedConfig},
-};
+use codex_app_server_protocol::Tools;
+use codex_app_server_protocol::UserSavedConfig;
+use codex_protocol::config_types::ReasoningEffort;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::SandboxMode;
+use codex_protocol::config_types::Verbosity;
 use dirs::home_dir;
 use serde::Deserialize;
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use toml::Value as TomlValue;
-use toml_edit::{Array as TomlArray, DocumentMut, Item as TomlItem, Table as TomlTable};
+use toml_edit::Array as TomlArray;
+use toml_edit::DocumentMut;
+use toml_edit::Item as TomlItem;
+use toml_edit::Table as TomlTable;
 
-const OPENAI_DEFAULT_MODEL: &str = "gpt-5-codex";
+#[cfg(target_os = "windows")]
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5";
+#[cfg(not(target_os = "windows"))]
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5-codex";
 const OPENAI_DEFAULT_REVIEW_MODEL: &str = "gpt-5-codex";
 pub const GPT_5_CODEX_MEDIUM_MODEL: &str = "gpt-5-codex";
 
@@ -125,6 +148,9 @@ pub struct Config {
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
     pub project_doc_max_bytes: usize,
 
+    /// Additional filenames to try when looking for project-level docs.
+    pub project_doc_fallback_filenames: Vec<String>,
+
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
     pub codex_home: PathBuf,
@@ -187,53 +213,44 @@ pub struct Config {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: bool,
+
+    /// OTEL configuration (exporter type, endpoint, headers, etc.).
+    pub otel: crate::config_types::OtelConfig,
 }
 
 impl Config {
-    /// Load configuration with *generic* CLI overrides (`-c key=value`) applied
-    /// **in between** the values parsed from `config.toml` and the
-    /// strongly-typed overrides specified via [`ConfigOverrides`].
-    ///
-    /// The precedence order is therefore: `config.toml` < `-c` overrides <
-    /// `ConfigOverrides`.
-    pub fn load_with_cli_overrides(
+    pub async fn load_with_cli_overrides(
         cli_overrides: Vec<(String, TomlValue)>,
         overrides: ConfigOverrides,
     ) -> std::io::Result<Self> {
-        // Resolve the directory that stores Codex state (e.g. ~/.codex or the
-        // value of $CODEX_HOME) so we can embed it into the resulting
-        // `Config` instance.
         let codex_home = find_codex_home()?;
 
-        // Step 1: parse `config.toml` into a generic JSON value.
-        let mut root_value = load_config_as_toml(&codex_home)?;
+        let root_value = load_resolved_config(
+            &codex_home,
+            cli_overrides,
+            crate::config_loader::LoaderOverrides::default(),
+        )
+        .await?;
 
-        // Step 2: apply the `-c` overrides.
-        for (path, value) in cli_overrides.into_iter() {
-            apply_toml_override(&mut root_value, &path, value);
-        }
-
-        // Step 3: deserialize into `ConfigToml` so that Serde can enforce the
-        // correct types.
         let cfg: ConfigToml = root_value.try_into().map_err(|e| {
             tracing::error!("Failed to deserialize overridden config: {e}");
             std::io::Error::new(std::io::ErrorKind::InvalidData, e)
         })?;
 
-        // Step 4: merge with the strongly-typed overrides.
         Self::load_from_base_config_with_overrides(cfg, overrides, codex_home)
     }
 }
 
-pub fn load_config_as_toml_with_cli_overrides(
+pub async fn load_config_as_toml_with_cli_overrides(
     codex_home: &Path,
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> std::io::Result<ConfigToml> {
-    let mut root_value = load_config_as_toml(codex_home)?;
-
-    for (path, value) in cli_overrides.into_iter() {
-        apply_toml_override(&mut root_value, &path, value);
-    }
+    let root_value = load_resolved_config(
+        codex_home,
+        cli_overrides,
+        crate::config_loader::LoaderOverrides::default(),
+    )
+    .await?;
 
     let cfg: ConfigToml = root_value.try_into().map_err(|e| {
         tracing::error!("Failed to deserialize overridden config: {e}");
@@ -243,33 +260,40 @@ pub fn load_config_as_toml_with_cli_overrides(
     Ok(cfg)
 }
 
-/// Read `CODEX_HOME/config.toml` and return it as a generic TOML value. Returns
-/// an empty TOML table when the file does not exist.
-pub fn load_config_as_toml(codex_home: &Path) -> std::io::Result<TomlValue> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
-    match std::fs::read_to_string(&config_path) {
-        Ok(contents) => match toml::from_str::<TomlValue>(&contents) {
-            Ok(val) => Ok(val),
-            Err(e) => {
-                tracing::error!("Failed to parse config.toml: {e}");
-                Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::info!("config.toml not found, using defaults");
-            Ok(TomlValue::Table(Default::default()))
-        }
-        Err(e) => {
-            tracing::error!("Failed to read config.toml: {e}");
-            Err(e)
-        }
-    }
+async fn load_resolved_config(
+    codex_home: &Path,
+    cli_overrides: Vec<(String, TomlValue)>,
+    overrides: crate::config_loader::LoaderOverrides,
+) -> std::io::Result<TomlValue> {
+    let layers = load_config_layers_with_overrides(codex_home, overrides).await?;
+    Ok(apply_overlays(layers, cli_overrides))
 }
 
-pub fn load_global_mcp_servers(
+fn apply_overlays(
+    layers: LoadedConfigLayers,
+    cli_overrides: Vec<(String, TomlValue)>,
+) -> TomlValue {
+    let LoadedConfigLayers {
+        mut base,
+        managed_config,
+        managed_preferences,
+    } = layers;
+
+    for (path, value) in cli_overrides.into_iter() {
+        apply_toml_override(&mut base, &path, value);
+    }
+
+    for overlay in [managed_config, managed_preferences].into_iter().flatten() {
+        merge_toml_values(&mut base, &overlay);
+    }
+
+    base
+}
+
+pub async fn load_global_mcp_servers(
     codex_home: &Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let root_value = load_config_as_toml(codex_home)?;
+    let root_value = load_config_as_toml(codex_home).await?;
     let Some(servers_value) = root_value.get("mcp_servers") else {
         return Ok(BTreeMap::new());
     };
@@ -414,7 +438,7 @@ fn set_project_trusted_inner(doc: &mut DocumentMut, project_path: &Path) -> anyh
         .get_mut(project_key.as_str())
         .and_then(|i| i.as_table_mut())
     else {
-        return Err(anyhow::anyhow!("project table missing for {}", project_key));
+        return Err(anyhow::anyhow!("project table missing for {project_key}"));
     };
     proj_tbl.set_implicit(false);
     proj_tbl["trust_level"] = toml_edit::value("trusted");
@@ -651,6 +675,9 @@ pub struct ConfigToml {
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
     pub project_doc_max_bytes: Option<usize>,
 
+    /// Ordered list of fallback filenames to look for when AGENTS.md is missing.
+    pub project_doc_fallback_filenames: Option<Vec<String>>,
+
     /// Profile to use from the `profiles` map.
     pub profile: Option<String>,
 
@@ -707,6 +734,9 @@ pub struct ConfigToml {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: Option<bool>,
+
+    /// OTEL configuration.
+    pub otel: Option<crate::config_types::OtelConfigToml>,
 }
 
 impl From<ConfigToml> for UserSavedConfig {
@@ -1016,6 +1046,19 @@ impl Config {
             mcp_servers: cfg.mcp_servers,
             model_providers,
             project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(PROJECT_DOC_MAX_BYTES),
+            project_doc_fallback_filenames: cfg
+                .project_doc_fallback_filenames
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|name| {
+                    let trimmed = name.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect(),
             codex_home,
             history,
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
@@ -1056,6 +1099,19 @@ impl Config {
                 .as_ref()
                 .map(|t| t.notifications.clone())
                 .unwrap_or_default(),
+            otel: {
+                let t: OtelConfigToml = cfg.otel.unwrap_or_default();
+                let log_user_prompt = t.log_user_prompt.unwrap_or(false);
+                let environment = t
+                    .environment
+                    .unwrap_or(DEFAULT_OTEL_ENVIRONMENT.to_string());
+                let exporter = t.exporter.unwrap_or(OtelExporterKind::None);
+                OtelConfig {
+                    log_user_prompt,
+                    environment,
+                    exporter,
+                }
+            },
         };
         Ok(config)
     }
@@ -1165,7 +1221,8 @@ pub fn log_dir(cfg: &Config) -> std::io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config_types::{HistoryPersistence, Notifications};
+    use crate::config_types::HistoryPersistence;
+    use crate::config_types::Notifications;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -1274,18 +1331,18 @@ exclude_slash_tmp = true
         );
     }
 
-    #[test]
-    fn load_global_mcp_servers_returns_empty_if_missing() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn load_global_mcp_servers_returns_empty_if_missing() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        let servers = load_global_mcp_servers(codex_home.path())?;
+        let servers = load_global_mcp_servers(codex_home.path()).await?;
         assert!(servers.is_empty());
 
         Ok(())
     }
 
-    #[test]
-    fn write_global_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn write_global_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
         let mut servers = BTreeMap::new();
@@ -1304,7 +1361,7 @@ exclude_slash_tmp = true
 
         write_global_mcp_servers(codex_home.path(), &servers)?;
 
-        let loaded = load_global_mcp_servers(codex_home.path())?;
+        let loaded = load_global_mcp_servers(codex_home.path()).await?;
         assert_eq!(loaded.len(), 1);
         let docs = loaded.get("docs").expect("docs entry");
         match &docs.transport {
@@ -1320,14 +1377,47 @@ exclude_slash_tmp = true
 
         let empty = BTreeMap::new();
         write_global_mcp_servers(codex_home.path(), &empty)?;
-        let loaded = load_global_mcp_servers(codex_home.path())?;
+        let loaded = load_global_mcp_servers(codex_home.path()).await?;
         assert!(loaded.is_empty());
 
         Ok(())
     }
 
-    #[test]
-    fn load_global_mcp_servers_accepts_legacy_ms_field() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
+        let codex_home = TempDir::new()?;
+        let managed_path = codex_home.path().join("managed_config.toml");
+
+        std::fs::write(
+            codex_home.path().join(CONFIG_TOML_FILE),
+            "model = \"base\"\n",
+        )?;
+        std::fs::write(&managed_path, "model = \"managed_config\"\n")?;
+
+        let overrides = crate::config_loader::LoaderOverrides {
+            managed_config_path: Some(managed_path),
+            #[cfg(target_os = "macos")]
+            managed_preferences_base64: None,
+        };
+
+        let root_value = load_resolved_config(
+            codex_home.path(),
+            vec![("model".to_string(), TomlValue::String("cli".to_string()))],
+            overrides,
+        )
+        .await?;
+
+        let cfg: ConfigToml = root_value.try_into().map_err(|e| {
+            tracing::error!("Failed to deserialize overridden config: {e}");
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+        })?;
+
+        assert_eq!(cfg.model.as_deref(), Some("managed_config"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_global_mcp_servers_accepts_legacy_ms_field() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
         let config_path = codex_home.path().join(CONFIG_TOML_FILE);
 
@@ -1341,15 +1431,15 @@ startup_timeout_ms = 2500
 "#,
         )?;
 
-        let servers = load_global_mcp_servers(codex_home.path())?;
+        let servers = load_global_mcp_servers(codex_home.path()).await?;
         let docs = servers.get("docs").expect("docs entry");
         assert_eq!(docs.startup_timeout_sec, Some(Duration::from_millis(2500)));
 
         Ok(())
     }
 
-    #[test]
-    fn write_global_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn write_global_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
         let servers = BTreeMap::from([(
@@ -1384,7 +1474,7 @@ ZIG_VAR = "3"
 "#
         );
 
-        let loaded = load_global_mcp_servers(codex_home.path())?;
+        let loaded = load_global_mcp_servers(codex_home.path()).await?;
         let docs = loaded.get("docs").expect("docs entry");
         match &docs.transport {
             McpServerTransportConfig::Stdio { command, args, env } => {
@@ -1402,8 +1492,8 @@ ZIG_VAR = "3"
         Ok(())
     }
 
-    #[test]
-    fn write_global_mcp_servers_serializes_streamable_http() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn write_global_mcp_servers_serializes_streamable_http() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
         let mut servers = BTreeMap::from([(
@@ -1431,7 +1521,7 @@ startup_timeout_sec = 2.0
 "#
         );
 
-        let loaded = load_global_mcp_servers(codex_home.path())?;
+        let loaded = load_global_mcp_servers(codex_home.path()).await?;
         let docs = loaded.get("docs").expect("docs entry");
         match &docs.transport {
             McpServerTransportConfig::StreamableHttp { url, bearer_token } => {
@@ -1463,7 +1553,7 @@ url = "https://example.com/mcp"
 "#
         );
 
-        let loaded = load_global_mcp_servers(codex_home.path())?;
+        let loaded = load_global_mcp_servers(codex_home.path()).await?;
         let docs = loaded.get("docs").expect("docs entry");
         match &docs.transport {
             McpServerTransportConfig::StreamableHttp { url, bearer_token } => {
@@ -1775,6 +1865,7 @@ model_verbosity = "high"
                 mcp_servers: HashMap::new(),
                 model_providers: fixture.model_provider_map.clone(),
                 project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+                project_doc_fallback_filenames: Vec::new(),
                 codex_home: fixture.codex_home(),
                 history: History::default(),
                 file_opener: UriBasedFileOpener::VsCode,
@@ -1796,6 +1887,7 @@ model_verbosity = "high"
                 active_profile: Some("o3".to_string()),
                 disable_paste_burst: false,
                 tui_notifications: Default::default(),
+                otel: OtelConfig::default(),
             },
             o3_profile_config
         );
@@ -1834,6 +1926,7 @@ model_verbosity = "high"
             mcp_servers: HashMap::new(),
             model_providers: fixture.model_provider_map.clone(),
             project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+            project_doc_fallback_filenames: Vec::new(),
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
@@ -1855,6 +1948,7 @@ model_verbosity = "high"
             active_profile: Some("gpt3".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            otel: OtelConfig::default(),
         };
 
         assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
@@ -1908,6 +2002,7 @@ model_verbosity = "high"
             mcp_servers: HashMap::new(),
             model_providers: fixture.model_provider_map.clone(),
             project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+            project_doc_fallback_filenames: Vec::new(),
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
@@ -1929,6 +2024,7 @@ model_verbosity = "high"
             active_profile: Some("zdr".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            otel: OtelConfig::default(),
         };
 
         assert_eq!(expected_zdr_profile_config, zdr_profile_config);
@@ -1968,6 +2064,7 @@ model_verbosity = "high"
             mcp_servers: HashMap::new(),
             model_providers: fixture.model_provider_map.clone(),
             project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+            project_doc_fallback_filenames: Vec::new(),
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
@@ -1989,6 +2086,7 @@ model_verbosity = "high"
             active_profile: Some("gpt5".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            otel: OtelConfig::default(),
         };
 
         assert_eq!(expected_gpt5_profile_config, gpt5_profile_config);

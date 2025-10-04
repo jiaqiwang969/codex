@@ -15,7 +15,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph, WidgetRef, Wrap},
 };
 
-use codex_protocol::mcp_protocol::AuthMode;
+use codex_app_server_protocol::AuthMode;
 use std::sync::RwLock;
 
 use crate::{

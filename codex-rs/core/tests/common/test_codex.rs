@@ -8,7 +8,7 @@ use tempfile::TempDir;
 
 use crate::load_default_config_for_test;
 
-type ConfigMutator = dyn FnOnce(&mut Config);
+type ConfigMutator = dyn FnOnce(&mut Config) + Send;
 
 pub struct TestCodexBuilder {
     config_mutators: Vec<Box<ConfigMutator>>,
@@ -17,7 +17,7 @@ pub struct TestCodexBuilder {
 impl TestCodexBuilder {
     pub fn with_config<T>(mut self, mutator: T) -> Self
     where
-        T: FnOnce(&mut Config) + 'static,
+        T: FnOnce(&mut Config) + Send + 'static,
     {
         self.config_mutators.push(Box::new(mutator));
         self

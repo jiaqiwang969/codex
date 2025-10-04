@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Clear, WidgetRef},
 };
 
-use codex_protocol::mcp_protocol::AuthMode;
+use codex_app_server_protocol::AuthMode;
 
 use crate::{
     LoginStatus,

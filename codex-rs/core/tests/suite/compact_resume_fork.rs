@@ -7,22 +7,31 @@
 //! request payload that Codex would send to the model and assert that the
 //! model-visible history matches the expected sequence of messages.
 
-use super::compact::{FIRST_REPLY, SUMMARY_TEXT};
-use codex_core::{
-    CodexAuth, CodexConversation, ConversationManager, ModelProviderInfo, NewConversation,
-    built_in_model_providers,
-    codex::compact::SUMMARIZATION_PROMPT,
-    config::Config,
-    protocol::{ConversationPathResponseEvent, EventMsg, InputItem, Op},
-    spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR,
-};
-use core_test_support::{
-    load_default_config_for_test,
-    responses::{ev_assistant_message, ev_completed, mount_sse_once, sse},
-    wait_for_event,
-};
+use super::compact::FIRST_REPLY;
+use super::compact::SUMMARY_TEXT;
+use codex_core::CodexAuth;
+use codex_core::CodexConversation;
+use codex_core::ConversationManager;
+use codex_core::ModelProviderInfo;
+use codex_core::NewConversation;
+use codex_core::built_in_model_providers;
+use codex_core::codex::compact::SUMMARIZATION_PROMPT;
+use codex_core::config::Config;
+use codex_core::config::OPENAI_DEFAULT_MODEL;
+use codex_core::protocol::ConversationPathResponseEvent;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use core_test_support::load_default_config_for_test;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::mount_sse_once_match;
+use core_test_support::responses::sse;
+use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
-use serde_json::{Value, json};
+use serde_json::Value;
+use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
 use wiremock::MockServer;
@@ -123,9 +132,10 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
         .as_str()
         .unwrap_or_default()
         .to_string();
+    let expected_model = OPENAI_DEFAULT_MODEL;
     let user_turn_1 = json!(
     {
-      "model": "gpt-5-codex",
+      "model": expected_model,
       "instructions": prompt,
       "input": [
         {
@@ -174,7 +184,7 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
     });
     let compact_1 = json!(
     {
-      "model": "gpt-5-codex",
+      "model": expected_model,
       "instructions": prompt,
       "input": [
         {
@@ -243,7 +253,7 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
     });
     let user_turn_2_after_compact = json!(
     {
-      "model": "gpt-5-codex",
+      "model": expected_model,
       "instructions": prompt,
       "input": [
         {
@@ -308,7 +318,7 @@ SUMMARY_ONLY_CONTEXT"
     });
     let usert_turn_3_after_resume = json!(
     {
-      "model": "gpt-5-codex",
+      "model": expected_model,
       "instructions": prompt,
       "input": [
         {
@@ -393,7 +403,7 @@ SUMMARY_ONLY_CONTEXT"
     });
     let user_turn_3_after_fork = json!(
     {
-      "model": "gpt-5-codex",
+      "model": expected_model,
       "instructions": prompt,
       "input": [
         {
@@ -694,13 +704,13 @@ async fn mount_initial_flow(server: &MockServer) {
             && !body.contains("\"text\":\"AFTER_RESUME\"")
             && !body.contains("\"text\":\"AFTER_FORK\"")
     };
-    mount_sse_once(server, match_first, sse1).await;
+    mount_sse_once_match(server, match_first, sse1).await;
 
     let match_compact = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains("You have exceeded the maximum number of tokens")
     };
-    mount_sse_once(server, match_compact, sse2).await;
+    mount_sse_once_match(server, match_compact, sse2).await;
 
     let match_after_compact = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
@@ -708,19 +718,19 @@ async fn mount_initial_flow(server: &MockServer) {
             && !body.contains("\"text\":\"AFTER_RESUME\"")
             && !body.contains("\"text\":\"AFTER_FORK\"")
     };
-    mount_sse_once(server, match_after_compact, sse3).await;
+    mount_sse_once_match(server, match_after_compact, sse3).await;
 
     let match_after_resume = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains("\"text\":\"AFTER_RESUME\"")
     };
-    mount_sse_once(server, match_after_resume, sse4).await;
+    mount_sse_once_match(server, match_after_resume, sse4).await;
 
     let match_after_fork = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains("\"text\":\"AFTER_FORK\"")
     };
-    mount_sse_once(server, match_after_fork, sse5).await;
+    mount_sse_once_match(server, match_after_fork, sse5).await;
 }
 
 async fn mount_second_compact_flow(server: &MockServer) {
@@ -735,13 +745,13 @@ async fn mount_second_compact_flow(server: &MockServer) {
         body.contains("You have exceeded the maximum number of tokens")
             && body.contains("AFTER_FORK")
     };
-    mount_sse_once(server, match_second_compact, sse6).await;
+    mount_sse_once_match(server, match_second_compact, sse6).await;
 
     let match_after_second_resume = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains(&format!("\"text\":\"{AFTER_SECOND_RESUME}\""))
     };
-    mount_sse_once(server, match_after_second_resume, sse7).await;
+    mount_sse_once_match(server, match_after_second_resume, sse7).await;
 }
 
 async fn start_test_conversation(

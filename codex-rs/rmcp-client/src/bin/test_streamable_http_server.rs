@@ -1,18 +1,31 @@
-use std::{borrow::Cow, collections::HashMap, io::ErrorKind, net::SocketAddr, sync::Arc};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::io::ErrorKind;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::Router;
-use rmcp::{
-    ErrorData as McpError,
-    handler::server::ServerHandler,
-    model::{
-        CallToolRequestParam, CallToolResult, JsonObject, ListToolsResult, PaginatedRequestParam,
-        ServerCapabilities, ServerInfo, Tool,
-    },
-    transport::{
-        StreamableHttpServerConfig, StreamableHttpService,
-        streamable_http_server::session::local::LocalSessionManager,
-    },
-};
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::Request;
+use axum::http::StatusCode;
+use axum::http::header::AUTHORIZATION;
+use axum::middleware;
+use axum::middleware::Next;
+use axum::response::Response;
+use rmcp::ErrorData as McpError;
+use rmcp::handler::server::ServerHandler;
+use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolResult;
+use rmcp::model::JsonObject;
+use rmcp::model::ListToolsResult;
+use rmcp::model::PaginatedRequestParam;
+use rmcp::model::ServerCapabilities;
+use rmcp::model::ServerInfo;
+use rmcp::model::Tool;
+use rmcp::transport::StreamableHttpServerConfig;
+use rmcp::transport::StreamableHttpService;
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::task;
@@ -156,7 +169,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     );
 
+    let router = if let Ok(token) = std::env::var("MCP_EXPECT_BEARER") {
+        let expected = Arc::new(format!("Bearer {token}"));
+        router.layer(middleware::from_fn_with_state(expected, require_bearer))
+    } else {
+        router
+    };
+
     axum::serve(listener, router).await?;
     task::yield_now().await;
     Ok(())
+}
+
+async fn require_bearer(
+    State(expected): State<Arc<String>>,
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if request
+        .headers()
+        .get(AUTHORIZATION)
+        .is_some_and(|value| value.as_bytes() == expected.as_bytes())
+    {
+        Ok(next.run(request).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
 }

@@ -98,7 +98,7 @@ fn status_snapshot_includes_reasoning_details() {
         .expect("timestamp");
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let composite = new_status_output(&config, &usage, &None, Some(&rate_display));
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, Some(&rate_display));
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
         for line in &mut rendered_lines {
@@ -139,7 +139,7 @@ fn status_snapshot_includes_monthly_limit() {
         .expect("timestamp");
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let composite = new_status_output(&config, &usage, &None, Some(&rate_display));
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, Some(&rate_display));
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
         for line in &mut rendered_lines {
@@ -165,7 +165,7 @@ fn status_card_token_usage_excludes_cached_tokens() {
         total_tokens: 2_100,
     };
 
-    let composite = new_status_output(&config, &usage, &None, None);
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, None);
     let rendered = render_lines(&composite.display_lines(120));
 
     assert!(
@@ -206,7 +206,7 @@ fn status_snapshot_truncates_in_narrow_terminal() {
         .expect("timestamp");
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let composite = new_status_output(&config, &usage, &None, Some(&rate_display));
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, Some(&rate_display));
     let mut rendered_lines = render_lines(&composite.display_lines(46));
     if cfg!(windows) {
         for line in &mut rendered_lines {
@@ -233,7 +233,7 @@ fn status_snapshot_shows_missing_limits_message() {
         total_tokens: 750,
     };
 
-    let composite = new_status_output(&config, &usage, &None, None);
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, None);
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
         for line in &mut rendered_lines {
@@ -269,7 +269,7 @@ fn status_snapshot_shows_empty_limits_message() {
         .expect("timestamp");
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let composite = new_status_output(&config, &usage, &None, Some(&rate_display));
+    let composite = new_status_output(&config, &usage, Some(&usage), &None, Some(&rate_display));
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
         for line in &mut rendered_lines {
@@ -278,4 +278,42 @@ fn status_snapshot_shows_empty_limits_message() {
     }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
+}
+
+#[test]
+fn status_context_window_uses_last_usage() {
+    let temp_home = TempDir::new().expect("temp home");
+    let mut config = test_config(&temp_home);
+    config.model_context_window = Some(272_000);
+
+    let total_usage = TokenUsage {
+        input_tokens: 12_800,
+        cached_input_tokens: 0,
+        output_tokens: 879,
+        reasoning_output_tokens: 0,
+        total_tokens: 102_000,
+    };
+    let last_usage = TokenUsage {
+        input_tokens: 12_800,
+        cached_input_tokens: 0,
+        output_tokens: 879,
+        reasoning_output_tokens: 0,
+        total_tokens: 13_679,
+    };
+
+    let composite = new_status_output(&config, &total_usage, Some(&last_usage), &None, None);
+    let rendered_lines = render_lines(&composite.display_lines(80));
+    let context_line = rendered_lines
+        .into_iter()
+        .find(|line| line.contains("Context window"))
+        .expect("context line");
+
+    assert!(
+        context_line.contains("13.7K used / 272K"),
+        "expected context line to reflect last usage tokens, got: {context_line}"
+    );
+    assert!(
+        !context_line.contains("102K"),
+        "context line should not use total aggregated tokens, got: {context_line}"
+    );
 }

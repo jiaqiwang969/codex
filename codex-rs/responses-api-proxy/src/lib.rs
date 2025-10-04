@@ -1,21 +1,30 @@
-use std::{
-    fs::{
-        File, {self},
-    },
-    io::Write,
-    net::{SocketAddr, TcpListener},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::fs::File;
+use std::fs::{self};
+use std::io::Write;
+use std::net::SocketAddr;
+use std::net::TcpListener;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::anyhow;
 use clap::Parser;
-use reqwest::{
-    blocking::Client,
-    header::{AUTHORIZATION, HOST, HeaderMap, HeaderName, HeaderValue},
-};
+use reqwest::blocking::Client;
+use reqwest::header::AUTHORIZATION;
+use reqwest::header::HOST;
+use reqwest::header::HeaderMap;
+use reqwest::header::HeaderName;
+use reqwest::header::HeaderValue;
 use serde::Serialize;
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
+use tiny_http::Header;
+use tiny_http::Method;
+use tiny_http::Request;
+use tiny_http::Response;
+use tiny_http::Server;
+use tiny_http::StatusCode;
 
 mod read_api_key;
 use read_api_key::read_auth_header_from_stdin;
@@ -40,6 +49,7 @@ pub struct Args {
 #[derive(Serialize)]
 struct ServerInfo {
     port: u16,
+    pid: u32,
 }
 
 /// Entry point for the library main, for parity with other crates.
@@ -54,6 +64,8 @@ pub fn run_main(args: Args) -> Result<()> {
         .map_err(|err| anyhow!("creating HTTP server: {err}"))?;
     let client = Arc::new(
         Client::builder()
+            // Disable reqwest's 30s default so long-lived response streams keep flowing.
+            .timeout(None::<Duration>)
             .build()
             .context("building reqwest client")?,
     );
@@ -89,15 +101,17 @@ fn write_server_info(path: &Path, port: u16) -> Result<()> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        let parent_display = parent.display();
-        fs::create_dir_all(parent).with_context(|| format!("create_dir_all {parent_display}"))?;
+        fs::create_dir_all(parent)?;
     }
-    let info = ServerInfo { port };
-    let data = serde_json::to_vec(&info).context("serialize startup info")?;
-    let p = path.display();
-    let mut f = File::create(path).with_context(|| format!("create {p}"))?;
-    f.write_all(&data).with_context(|| format!("write {p}"))?;
-    f.write_all(b"\n").with_context(|| format!("newline {p}"))?;
+
+    let info = ServerInfo {
+        port,
+        pid: std::process::id(),
+    };
+    let mut data = serde_json::to_string(&info)?;
+    data.push('\n');
+    let mut f = File::create(path)?;
+    f.write_all(data.as_bytes())?;
     Ok(())
 }
 

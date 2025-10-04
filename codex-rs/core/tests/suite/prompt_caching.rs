@@ -1,20 +1,31 @@
 #![allow(clippy::unwrap_used)]
 
-use codex_core::{
-    CodexAuth, ConversationManager, ModelProviderInfo, built_in_model_providers,
-    model_family::find_family_for_model,
-    protocol::{AskForApproval, EventMsg, InputItem, Op, SandboxPolicy},
-    protocol_config_types::{ReasoningEffort, ReasoningSummary},
-    shell::{Shell, default_user_shell},
-};
-use core_test_support::{
-    load_default_config_for_test, load_sse_fixture_with_id, skip_if_no_network, wait_for_event,
-};
+use codex_core::CodexAuth;
+use codex_core::ConversationManager;
+use codex_core::ModelProviderInfo;
+use codex_core::built_in_model_providers;
+use codex_core::config::OPENAI_DEFAULT_MODEL;
+use codex_core::model_family::find_family_for_model;
+use codex_core::protocol::AskForApproval;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use codex_core::protocol::SandboxPolicy;
+use codex_core::protocol_config_types::ReasoningEffort;
+use codex_core::protocol_config_types::ReasoningSummary;
+use codex_core::shell::Shell;
+use codex_core::shell::default_user_shell;
+use core_test_support::load_default_config_for_test;
+use core_test_support::load_sse_fixture_with_id;
+use core_test_support::skip_if_no_network;
+use core_test_support::wait_for_event;
+use std::collections::HashMap;
 use tempfile::TempDir;
-use wiremock::{
-    Mock, MockServer, ResponseTemplate,
-    matchers::{method, path},
-};
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 fn text_user_input(text: String) -> serde_json::Value {
     serde_json::json!({
@@ -210,7 +221,26 @@ async fn prompt_tools_are_consistent_across_requests() {
 
     // our internal implementation is responsible for keeping tools in sync
     // with the OpenAI schema, so we just verify the tool presence here
-    let expected_tools_names: &[&str] = &["shell", "update_plan", "apply_patch", "view_image"];
+    let tools_by_model: HashMap<&'static str, Vec<&'static str>> = HashMap::from([
+        (
+            "gpt-5",
+            vec!["shell", "update_plan", "apply_patch", "view_image"],
+        ),
+        (
+            "gpt-5-codex",
+            vec![
+                "shell",
+                "update_plan",
+                "apply_patch",
+                "read_file",
+                "view_image",
+            ],
+        ),
+    ]);
+    let expected_tools_names = tools_by_model
+        .get(OPENAI_DEFAULT_MODEL)
+        .unwrap_or_else(|| panic!("expected tools to be defined for model {OPENAI_DEFAULT_MODEL}"))
+        .as_slice();
     let body0 = requests[0].body_json::<serde_json::Value>().unwrap();
     assert_eq!(
         body0["instructions"],

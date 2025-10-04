@@ -1,42 +1,58 @@
-use std::{io::BufRead, path::Path, sync::OnceLock, time::Duration};
+use std::io::BufRead;
+use std::path::Path;
+use std::sync::OnceLock;
+use std::time::Duration;
 
-use crate::{AuthManager, auth::CodexAuth};
+use crate::AuthManager;
+use crate::auth::CodexAuth;
+use crate::error::RetryLimitReachedError;
+use crate::error::UnexpectedResponseError;
 use bytes::Bytes;
-use codex_protocol::mcp_protocol::{AuthMode, ConversationId};
+use codex_app_server_protocol::AuthMode;
+use codex_protocol::ConversationId;
 use eventsource_stream::Eventsource;
 use futures::prelude::*;
 use regex_lite::Regex;
-use reqwest::{StatusCode, header::HeaderMap};
-use serde::{Deserialize, Serialize};
+use reqwest::StatusCode;
+use reqwest::header::HeaderMap;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
-use tokio::{sync::mpsc, time::timeout};
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, trace, warn};
+use tracing::debug;
+use tracing::trace;
+use tracing::warn;
 
-use crate::{
-    chat_completions::{AggregateStreamExt, stream_chat_completions},
-    client_common::{
-        Prompt, ResponseEvent, ResponseStream, ResponsesApiRequest,
-        create_reasoning_param_for_request, create_text_param_for_request,
-    },
-    config::Config,
-    default_client::create_client,
-    error::{CodexErr, Result, UsageLimitReachedError},
-    flags::CODEX_RS_SSE_FIXTURE,
-    model_family::ModelFamily,
-    model_provider_info::{ModelProviderInfo, WireApi},
-    openai_model_info::get_model_info,
-    openai_tools::create_tools_json_for_responses_api,
-    protocol::{RateLimitSnapshot, RateLimitWindow, TokenUsage},
-    token_data::PlanType,
-    util::backoff,
-};
-use codex_protocol::{
-    config_types::{
-        ReasoningEffort as ReasoningEffortConfig, ReasoningSummary as ReasoningSummaryConfig,
-    },
-    models::ResponseItem,
-};
+use crate::chat_completions::AggregateStreamExt;
+use crate::chat_completions::stream_chat_completions;
+use crate::client_common::Prompt;
+use crate::client_common::ResponseEvent;
+use crate::client_common::ResponseStream;
+use crate::client_common::ResponsesApiRequest;
+use crate::client_common::create_reasoning_param_for_request;
+use crate::client_common::create_text_param_for_request;
+use crate::config::Config;
+use crate::default_client::create_client;
+use crate::error::CodexErr;
+use crate::error::Result;
+use crate::error::UsageLimitReachedError;
+use crate::flags::CODEX_RS_SSE_FIXTURE;
+use crate::model_family::ModelFamily;
+use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::WireApi;
+use crate::openai_model_info::get_model_info;
+use crate::openai_tools::create_tools_json_for_responses_api;
+use crate::protocol::RateLimitSnapshot;
+use crate::protocol::RateLimitWindow;
+use crate::protocol::TokenUsage;
+use crate::token_data::PlanType;
+use crate::util::backoff;
+use codex_otel::otel_event_manager::OtelEventManager;
+use codex_protocol::config_types::ReasoningEffort as ReasoningEffortConfig;
+use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
+use codex_protocol::models::ResponseItem;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +76,7 @@ struct Error {
 pub struct ModelClient {
     config: Arc<Config>,
     auth_manager: Option<Arc<AuthManager>>,
+    otel_event_manager: OtelEventManager,
     client: reqwest::Client,
     provider: ModelProviderInfo,
     conversation_id: ConversationId,
@@ -71,6 +88,7 @@ impl ModelClient {
     pub fn new(
         config: Arc<Config>,
         auth_manager: Option<Arc<AuthManager>>,
+        otel_event_manager: OtelEventManager,
         provider: ModelProviderInfo,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
@@ -81,6 +99,7 @@ impl ModelClient {
         Self {
             config,
             auth_manager,
+            otel_event_manager,
             client,
             provider,
             conversation_id,
@@ -114,6 +133,7 @@ impl ModelClient {
                     &self.config.model_family,
                     &self.client,
                     &self.provider,
+                    &self.otel_event_manager,
                 )
                 .await?;
 
@@ -150,7 +170,12 @@ impl ModelClient {
         if let Some(path) = &*CODEX_RS_SSE_FIXTURE {
             // short circuit for tests
             warn!(path, "Streaming from fixture");
-            return stream_from_fixture(path, self.provider.clone()).await;
+            return stream_from_fixture(
+                path,
+                self.provider.clone(),
+                self.otel_event_manager.clone(),
+            )
+            .await;
         }
 
         let auth_manager = self.auth_manager.clone();
@@ -220,7 +245,7 @@ impl ModelClient {
         let max_attempts = self.provider.request_max_retries();
         for attempt in 0..=max_attempts {
             match self
-                .attempt_stream_responses(&payload_json, &auth_manager)
+                .attempt_stream_responses(attempt, &payload_json, &auth_manager)
                 .await
             {
                 Ok(stream) => {
@@ -245,6 +270,7 @@ impl ModelClient {
     /// Single attempt to start a streaming Responses API call.
     async fn attempt_stream_responses(
         &self,
+        attempt: u64,
         payload_json: &Value,
         auth_manager: &Option<Arc<AuthManager>>,
     ) -> std::result::Result<ResponseStream, StreamAttemptError> {
@@ -278,15 +304,22 @@ impl ModelClient {
             req_builder = req_builder.header("chatgpt-account-id", account_id);
         }
 
-        let res = req_builder.send().await;
+        let res = self
+            .otel_event_manager
+            .log_request(attempt, || req_builder.send())
+            .await;
+
+        let mut request_id = None;
         if let Ok(resp) = &res {
+            request_id = resp
+                .headers()
+                .get("cf-ray")
+                .map(|v| v.to_str().unwrap_or_default().to_string());
+
             trace!(
-                "Response status: {}, cf-ray: {}",
+                "Response status: {}, cf-ray: {:?}",
                 resp.status(),
-                resp.headers()
-                    .get("cf-ray")
-                    .map(|v| v.to_str().unwrap_or_default())
-                    .unwrap_or_default()
+                request_id
             );
         }
 
@@ -309,6 +342,7 @@ impl ModelClient {
                     stream,
                     tx_event,
                     self.provider.stream_idle_timeout(),
+                    self.otel_event_manager.clone(),
                 ));
 
                 Ok(ResponseStream { rx_event })
@@ -345,7 +379,11 @@ impl ModelClient {
                     // Surface the error body to callers. Use `unwrap_or_default` per Clippy.
                     let body = res.text().await.unwrap_or_default();
                     return Err(StreamAttemptError::Fatal(CodexErr::UnexpectedStatus(
-                        status, body,
+                        UnexpectedResponseError {
+                            status,
+                            body,
+                            request_id: None,
+                        },
                     )));
                 }
 
@@ -376,6 +414,7 @@ impl ModelClient {
                 Err(StreamAttemptError::RetryableHttpError {
                     status,
                     retry_after,
+                    request_id,
                 })
             }
             Err(e) => Err(StreamAttemptError::RetryableTransportError(e.into())),
@@ -384,6 +423,10 @@ impl ModelClient {
 
     pub fn get_provider(&self) -> ModelProviderInfo {
         self.provider.clone()
+    }
+
+    pub fn get_otel_event_manager(&self) -> OtelEventManager {
+        self.otel_event_manager.clone()
     }
 
     /// Returns the currently configured model slug.
@@ -415,6 +458,7 @@ enum StreamAttemptError {
     RetryableHttpError {
         status: StatusCode,
         retry_after: Option<Duration>,
+        request_id: Option<String>,
     },
     RetryableTransportError(CodexErr),
     Fatal(CodexErr),
@@ -439,11 +483,13 @@ impl StreamAttemptError {
 
     fn into_error(self) -> CodexErr {
         match self {
-            Self::RetryableHttpError { status, .. } => {
+            Self::RetryableHttpError {
+                status, request_id, ..
+            } => {
                 if status == StatusCode::INTERNAL_SERVER_ERROR {
                     CodexErr::InternalServerError
                 } else {
-                    CodexErr::RetryLimit(status)
+                    CodexErr::RetryLimit(RetryLimitReachedError { status, request_id })
                 }
             }
             Self::RetryableTransportError(error) => error,
@@ -592,6 +638,7 @@ async fn process_sse<S>(
     stream: S,
     tx_event: mpsc::Sender<Result<ResponseEvent>>,
     idle_timeout: Duration,
+    otel_event_manager: OtelEventManager,
 ) where
     S: Stream<Item = Result<Bytes>> + Unpin,
 {
@@ -603,7 +650,10 @@ async fn process_sse<S>(
     let mut response_error: Option<CodexErr> = None;
 
     loop {
-        let sse = match timeout(idle_timeout, stream.next()).await {
+        let sse = match otel_event_manager
+            .log_sse_event(|| timeout(idle_timeout, stream.next()))
+            .await
+        {
             Ok(Some(Ok(sse))) => sse,
             Ok(Some(Err(e))) => {
                 debug!("SSE Error: {e:#}");
@@ -617,6 +667,21 @@ async fn process_sse<S>(
                         id: response_id,
                         usage,
                     }) => {
+                        if let Some(token_usage) = &usage {
+                            otel_event_manager.sse_event_completed(
+                                token_usage.input_tokens,
+                                token_usage.output_tokens,
+                                token_usage
+                                    .input_tokens_details
+                                    .as_ref()
+                                    .map(|d| d.cached_tokens),
+                                token_usage
+                                    .output_tokens_details
+                                    .as_ref()
+                                    .map(|d| d.reasoning_tokens),
+                                token_usage.total_tokens,
+                            );
+                        }
                         let event = ResponseEvent::Completed {
                             response_id,
                             token_usage: usage.map(Into::into),
@@ -624,12 +689,13 @@ async fn process_sse<S>(
                         let _ = tx_event.send(Ok(event)).await;
                     }
                     None => {
-                        let _ = tx_event
-                            .send(Err(response_error.unwrap_or(CodexErr::Stream(
-                                "stream closed before response.completed".into(),
-                                None,
-                            ))))
-                            .await;
+                        let error = response_error.unwrap_or(CodexErr::Stream(
+                            "stream closed before response.completed".into(),
+                            None,
+                        ));
+                        otel_event_manager.see_event_completed_failed(&error);
+
+                        let _ = tx_event.send(Err(error)).await;
                     }
                 }
                 return;
@@ -733,7 +799,9 @@ async fn process_sse<S>(
                                 response_error = Some(CodexErr::Stream(message, delay));
                             }
                             Err(e) => {
-                                debug!("failed to parse ErrorResponse: {e}");
+                                let error = format!("failed to parse ErrorResponse: {e}");
+                                debug!(error);
+                                response_error = Some(CodexErr::Stream(error, None))
                             }
                         }
                     }
@@ -747,7 +815,9 @@ async fn process_sse<S>(
                             response_completed = Some(r);
                         }
                         Err(e) => {
-                            debug!("failed to parse ResponseCompleted: {e}");
+                            let error = format!("failed to parse ResponseCompleted: {e}");
+                            debug!(error);
+                            response_error = Some(CodexErr::Stream(error, None));
                             continue;
                         }
                     };
@@ -794,6 +864,7 @@ async fn process_sse<S>(
 async fn stream_from_fixture(
     path: impl AsRef<Path>,
     provider: ModelProviderInfo,
+    otel_event_manager: OtelEventManager,
 ) -> Result<ResponseStream> {
     let (tx_event, rx_event) = mpsc::channel::<Result<ResponseEvent>>(1600);
     let f = std::fs::File::open(path.as_ref())?;
@@ -812,6 +883,7 @@ async fn stream_from_fixture(
         stream,
         tx_event,
         provider.stream_idle_timeout(),
+        otel_event_manager,
     ));
     Ok(ResponseStream { rx_event })
 }
@@ -867,6 +939,7 @@ mod tests {
     async fn collect_events(
         chunks: &[&[u8]],
         provider: ModelProviderInfo,
+        otel_event_manager: OtelEventManager,
     ) -> Vec<Result<ResponseEvent>> {
         let mut builder = IoBuilder::new();
         for chunk in chunks {
@@ -876,7 +949,12 @@ mod tests {
         let reader = builder.build();
         let stream = ReaderStream::new(reader).map_err(CodexErr::Io);
         let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent>>(16);
-        tokio::spawn(process_sse(stream, tx, provider.stream_idle_timeout()));
+        tokio::spawn(process_sse(
+            stream,
+            tx,
+            provider.stream_idle_timeout(),
+            otel_event_manager,
+        ));
 
         let mut events = Vec::new();
         while let Some(ev) = rx.recv().await {
@@ -890,6 +968,7 @@ mod tests {
     async fn run_sse(
         events: Vec<serde_json::Value>,
         provider: ModelProviderInfo,
+        otel_event_manager: OtelEventManager,
     ) -> Vec<ResponseEvent> {
         let mut body = String::new();
         for e in events {
@@ -906,13 +985,30 @@ mod tests {
 
         let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent>>(8);
         let stream = ReaderStream::new(std::io::Cursor::new(body)).map_err(CodexErr::Io);
-        tokio::spawn(process_sse(stream, tx, provider.stream_idle_timeout()));
+        tokio::spawn(process_sse(
+            stream,
+            tx,
+            provider.stream_idle_timeout(),
+            otel_event_manager,
+        ));
 
         let mut out = Vec::new();
         while let Some(ev) = rx.recv().await {
             out.push(ev.expect("channel closed"));
         }
         out
+    }
+
+    fn otel_event_manager() -> OtelEventManager {
+        OtelEventManager::new(
+            ConversationId::new(),
+            "test",
+            "test",
+            None,
+            Some(AuthMode::ChatGPT),
+            false,
+            "test".to_string(),
+        )
     }
 
     // ────────────────────────────
@@ -966,9 +1062,12 @@ mod tests {
             requires_openai_auth: false,
         };
 
+        let otel_event_manager = otel_event_manager();
+
         let events = collect_events(
             &[sse1.as_bytes(), sse2.as_bytes(), sse3.as_bytes()],
             provider,
+            otel_event_manager,
         )
         .await;
 
@@ -1026,7 +1125,9 @@ mod tests {
             requires_openai_auth: false,
         };
 
-        let events = collect_events(&[sse1.as_bytes()], provider).await;
+        let otel_event_manager = otel_event_manager();
+
+        let events = collect_events(&[sse1.as_bytes()], provider, otel_event_manager).await;
 
         assert_eq!(events.len(), 2);
 
@@ -1060,7 +1161,9 @@ mod tests {
             requires_openai_auth: false,
         };
 
-        let events = collect_events(&[sse1.as_bytes()], provider).await;
+        let otel_event_manager = otel_event_manager();
+
+        let events = collect_events(&[sse1.as_bytes()], provider, otel_event_manager).await;
 
         assert_eq!(events.len(), 1);
 
@@ -1165,7 +1268,9 @@ mod tests {
                 requires_openai_auth: false,
             };
 
-            let out = run_sse(evs, provider).await;
+            let otel_event_manager = otel_event_manager();
+
+            let out = run_sse(evs, provider, otel_event_manager).await;
             assert_eq!(out.len(), case.expected_len, "case {}", case.name);
             assert!(
                 (case.expect_first)(&out[0]),
@@ -1204,7 +1309,8 @@ mod tests {
 
     #[test]
     fn error_response_deserializes_old_schema_known_plan_type_and_serializes_back() {
-        use crate::token_data::{KnownPlan, PlanType};
+        use crate::token_data::KnownPlan;
+        use crate::token_data::PlanType;
 
         let json = r#"{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_in_seconds":3600}}"#;
         let resp: ErrorResponse =

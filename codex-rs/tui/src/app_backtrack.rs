@@ -8,7 +8,7 @@ use crate::{
     tui::TuiEvent,
 };
 use codex_core::protocol::ConversationPathResponseEvent;
-use codex_protocol::mcp_protocol::ConversationId;
+use codex_protocol::ConversationId;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 

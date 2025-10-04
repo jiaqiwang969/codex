@@ -1,34 +1,42 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
-use crate::{
-    codex_message_processor::CodexMessageProcessor,
-    codex_tool_config::{
-        CodexToolCallParam, CodexToolCallReplyParam, create_tool_for_codex_tool_call_param,
-        create_tool_for_codex_tool_call_reply_param,
-    },
-    error_code::INVALID_REQUEST_ERROR_CODE,
-    outgoing_message::OutgoingMessageSender,
-};
-use codex_protocol::mcp_protocol::{ClientRequest, ConversationId};
+use crate::codex_tool_config::CodexToolCallParam;
+use crate::codex_tool_config::CodexToolCallReplyParam;
+use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
+use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
+use crate::error_code::INVALID_REQUEST_ERROR_CODE;
+use crate::outgoing_message::OutgoingMessageSender;
+use codex_protocol::ConversationId;
+use codex_protocol::protocol::SessionSource;
 
-use codex_core::{
-    AuthManager, ConversationManager,
-    config::Config,
-    default_client::{USER_AGENT_SUFFIX, get_codex_user_agent},
-    protocol::Submission,
-};
-use mcp_types::{
-    CallToolRequestParams, CallToolResult, ClientRequest as McpClientRequest, ContentBlock,
-    JSONRPCError, JSONRPCErrorError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
-    ListToolsResult, ModelContextProtocolRequest, RequestId, ServerCapabilitiesTools,
-    ServerNotification, TextContent,
-};
+use codex_core::AuthManager;
+use codex_core::ConversationManager;
+use codex_core::config::Config;
+use codex_core::default_client::USER_AGENT_SUFFIX;
+use codex_core::default_client::get_codex_user_agent;
+use codex_core::protocol::Submission;
+use mcp_types::CallToolRequestParams;
+use mcp_types::CallToolResult;
+use mcp_types::ClientRequest as McpClientRequest;
+use mcp_types::ContentBlock;
+use mcp_types::JSONRPCError;
+use mcp_types::JSONRPCErrorError;
+use mcp_types::JSONRPCNotification;
+use mcp_types::JSONRPCRequest;
+use mcp_types::JSONRPCResponse;
+use mcp_types::ListToolsResult;
+use mcp_types::ModelContextProtocolRequest;
+use mcp_types::RequestId;
+use mcp_types::ServerCapabilitiesTools;
+use mcp_types::ServerNotification;
+use mcp_types::TextContent;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::{sync::Mutex, task};
+use tokio::sync::Mutex;
+use tokio::task;
 
 pub(crate) struct MessageProcessor {
-    codex_message_processor: CodexMessageProcessor,
     outgoing: Arc<OutgoingMessageSender>,
     initialized: bool,
     codex_linux_sandbox_exe: Option<PathBuf>,
@@ -45,17 +53,10 @@ impl MessageProcessor {
         config: Arc<Config>,
     ) -> Self {
         let outgoing = Arc::new(outgoing);
-        let auth_manager = AuthManager::shared(config.codex_home.clone());
-        let conversation_manager = Arc::new(ConversationManager::new(auth_manager.clone()));
-        let codex_message_processor = CodexMessageProcessor::new(
-            auth_manager,
-            conversation_manager.clone(),
-            outgoing.clone(),
-            codex_linux_sandbox_exe.clone(),
-            config,
-        );
+        let auth_manager = AuthManager::shared(config.codex_home.clone(), false);
+        let conversation_manager =
+            Arc::new(ConversationManager::new(auth_manager, SessionSource::Mcp));
         Self {
-            codex_message_processor,
             outgoing,
             initialized: false,
             codex_linux_sandbox_exe,
@@ -65,17 +66,6 @@ impl MessageProcessor {
     }
 
     pub(crate) async fn process_request(&mut self, request: JSONRPCRequest) {
-        if let Ok(request_json) = serde_json::to_value(request.clone())
-            && let Ok(codex_request) = serde_json::from_value::<ClientRequest>(request_json)
-        {
-            // If the request is a Codex request, handle it with the Codex
-            // message processor.
-            self.codex_message_processor
-                .process_request(codex_request)
-                .await;
-            return;
-        }
-
         // Hold on to the ID so we can respond.
         let request_id = request.id.clone();
 
@@ -352,7 +342,10 @@ impl MessageProcessor {
     async fn handle_tool_call_codex(&self, id: RequestId, arguments: Option<serde_json::Value>) {
         let (initial_prompt, config): (String, Config) = match arguments {
             Some(json_val) => match serde_json::from_value::<CodexToolCallParam>(json_val) {
-                Ok(tool_cfg) => match tool_cfg.into_config(self.codex_linux_sandbox_exe.clone()) {
+                Ok(tool_cfg) => match tool_cfg
+                    .into_config(self.codex_linux_sandbox_exe.clone())
+                    .await
+                {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         let result = CallToolResult {

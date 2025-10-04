@@ -1,24 +1,39 @@
-use codex_core::{
-    CodexAuth, ConversationManager, ModelProviderInfo, NewConversation, built_in_model_providers,
-    protocol::{ErrorEvent, EventMsg, InputItem, Op, RolloutItem, RolloutLine},
-};
-use core_test_support::{load_default_config_for_test, skip_if_no_network, wait_for_event};
+use codex_core::CodexAuth;
+use codex_core::ConversationManager;
+use codex_core::ModelProviderInfo;
+use codex_core::NewConversation;
+use codex_core::built_in_model_providers;
+use codex_core::protocol::ErrorEvent;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use codex_core::protocol::RolloutItem;
+use codex_core::protocol::RolloutLine;
+use core_test_support::load_default_config_for_test;
+use core_test_support::skip_if_no_network;
+use core_test_support::wait_for_event;
 use tempfile::TempDir;
-use wiremock::{
-    Mock, Request, Respond, ResponseTemplate,
-    matchers::{method, path},
-};
+use wiremock::Mock;
+use wiremock::Request;
+use wiremock::Respond;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 use codex_core::codex::compact::SUMMARIZATION_PROMPT;
-use core_test_support::responses::{
-    ev_assistant_message, ev_completed, ev_completed_with_tokens, ev_function_call, mount_sse_once,
-    sse, sse_response, start_mock_server,
-};
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_completed_with_tokens;
+use core_test_support::responses::ev_function_call;
+use core_test_support::responses::mount_sse_once_match;
+use core_test_support::responses::sse;
+use core_test_support::responses::sse_response;
+use core_test_support::responses::start_mock_server;
 use pretty_assertions::assert_eq;
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 // --- Test helpers -----------------------------------------------------------
 
 pub(super) const FIRST_REPLY: &str = "FIRST_REPLY";
@@ -64,19 +79,19 @@ async fn summarize_context_three_requests_and_instructions() {
         body.contains("\"text\":\"hello world\"")
             && !body.contains("You have exceeded the maximum number of tokens")
     };
-    mount_sse_once(&server, first_matcher, sse1).await;
+    mount_sse_once_match(&server, first_matcher, sse1).await;
 
     let second_matcher = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains("You have exceeded the maximum number of tokens")
     };
-    mount_sse_once(&server, second_matcher, sse2).await;
+    mount_sse_once_match(&server, second_matcher, sse2).await;
 
     let third_matcher = |req: &wiremock::Request| {
         let body = std::str::from_utf8(&req.body).unwrap_or("");
         body.contains(&format!("\"text\":\"{THIRD_USER_MSG}\""))
     };
-    mount_sse_once(&server, third_matcher, sse3).await;
+    mount_sse_once_match(&server, third_matcher, sse3).await;
 
     // Build config pointing to the mock server and spawn Codex.
     let model_provider = ModelProviderInfo {

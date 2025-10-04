@@ -1,26 +1,46 @@
-use codex_core::{
-    CodexAuth, ContentItem, ConversationManager, LocalShellAction, LocalShellExecAction,
-    LocalShellStatus, ModelClient, ModelProviderInfo, NewConversation, Prompt,
-    ReasoningItemContent, ResponseEvent, ResponseItem, WireApi, built_in_model_providers,
-    protocol::{EventMsg, InputItem, Op},
-};
-use codex_protocol::{
-    mcp_protocol::ConversationId,
-    models::{ReasoningItemReasoningSummary, WebSearchAction},
-};
-use core_test_support::{
-    load_default_config_for_test, load_sse_fixture_with_id, responses, skip_if_no_network,
-    test_codex::test_codex, wait_for_event,
-};
+use codex_app_server_protocol::AuthMode;
+use codex_core::CodexAuth;
+use codex_core::ContentItem;
+use codex_core::ConversationManager;
+use codex_core::LocalShellAction;
+use codex_core::LocalShellExecAction;
+use codex_core::LocalShellStatus;
+use codex_core::ModelClient;
+use codex_core::ModelProviderInfo;
+use codex_core::NewConversation;
+use codex_core::Prompt;
+use codex_core::ReasoningItemContent;
+use codex_core::ResponseEvent;
+use codex_core::ResponseItem;
+use codex_core::WireApi;
+use codex_core::built_in_model_providers;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use codex_core::protocol::SessionSource;
+use codex_otel::otel_event_manager::OtelEventManager;
+use codex_protocol::ConversationId;
+use codex_protocol::models::ReasoningItemReasoningSummary;
+use codex_protocol::models::WebSearchAction;
+use core_test_support::load_default_config_for_test;
+use core_test_support::load_sse_fixture_with_id;
+use core_test_support::responses;
+use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::test_codex;
+use core_test_support::wait_for_event;
 use futures::StreamExt;
 use serde_json::json;
-use std::{io::Write, sync::Arc};
+use std::io::Write;
+use std::sync::Arc;
 use tempfile::TempDir;
 use uuid::Uuid;
-use wiremock::{
-    Mock, MockServer, ResponseTemplate,
-    matchers::{header_regex, method, path, query_param},
-};
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header_regex;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
+use wiremock::matchers::query_param;
 
 /// Build minimal SSE stream with completed marker using the JSON fixture.
 fn sse_completed(id: &str) -> String {
@@ -519,7 +539,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         Ok(None) => panic!("No CodexAuth found in codex_home"),
         Err(e) => panic!("Failed to load CodexAuth: {e}"),
     };
-    let conversation_manager = ConversationManager::new(auth_manager);
+    let conversation_manager = ConversationManager::new(auth_manager, SessionSource::Exec);
     let NewConversation {
         conversation: codex,
         ..
@@ -647,13 +667,26 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     let summary = config.model_reasoning_summary;
     let config = Arc::new(config);
 
+    let conversation_id = ConversationId::new();
+
+    let otel_event_manager = OtelEventManager::new(
+        conversation_id,
+        config.model.as_str(),
+        config.model_family.slug.as_str(),
+        None,
+        Some(AuthMode::ChatGPT),
+        false,
+        "test".to_string(),
+    );
+
     let client = ModelClient::new(
         Arc::clone(&config),
         None,
+        otel_event_manager,
         provider,
         effort,
         summary,
-        ConversationId::new(),
+        conversation_id,
     );
 
     let mut prompt = Prompt::default();

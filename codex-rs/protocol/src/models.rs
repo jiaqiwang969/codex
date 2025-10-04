@@ -256,6 +256,7 @@ pub struct ShellToolCallParams {
 #[derive(Debug, Clone, PartialEq, TS)]
 pub struct FunctionCallOutputPayload {
     pub content: String,
+    // TODO(jif) drop this.
     pub success: Option<bool>,
 }
 

@@ -1,19 +1,28 @@
 use std::sync::Arc;
 
-use codex_core::{
-    ContentItem, LocalShellAction, LocalShellExecAction, LocalShellStatus, ModelClient,
-    ModelProviderInfo, Prompt, ReasoningItemContent, ResponseItem, WireApi,
-    spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR,
-};
-use codex_protocol::mcp_protocol::ConversationId;
+use codex_app_server_protocol::AuthMode;
+use codex_core::ContentItem;
+use codex_core::LocalShellAction;
+use codex_core::LocalShellExecAction;
+use codex_core::LocalShellStatus;
+use codex_core::ModelClient;
+use codex_core::ModelProviderInfo;
+use codex_core::Prompt;
+use codex_core::ReasoningItemContent;
+use codex_core::ResponseItem;
+use codex_core::WireApi;
+use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use codex_otel::otel_event_manager::OtelEventManager;
+use codex_protocol::ConversationId;
 use core_test_support::load_default_config_for_test;
 use futures::StreamExt;
 use serde_json::Value;
 use tempfile::TempDir;
-use wiremock::{
-    Mock, MockServer, ResponseTemplate,
-    matchers::{method, path},
-};
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 fn network_disabled() -> bool {
     std::env::var(CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok()
@@ -63,13 +72,26 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
     let summary = config.model_reasoning_summary;
     let config = Arc::new(config);
 
+    let conversation_id = ConversationId::new();
+
+    let otel_event_manager = OtelEventManager::new(
+        conversation_id,
+        config.model.as_str(),
+        config.model_family.slug.as_str(),
+        None,
+        Some(AuthMode::ChatGPT),
+        false,
+        "test".to_string(),
+    );
+
     let client = ModelClient::new(
         Arc::clone(&config),
         None,
+        otel_event_manager,
         provider,
         effort,
         summary,
-        ConversationId::new(),
+        conversation_id,
     );
 
     let mut prompt = Prompt::default();
