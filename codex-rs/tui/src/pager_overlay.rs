@@ -1,4 +1,4 @@
-use std::{io::Result, sync::Arc, time::Duration};
+use std::{io::Result, sync::Arc, time::{Duration, Instant}};
 
 use crate::{history_cell::HistoryCell, render::line_utils::push_owned_lines, tui, tui::TuiEvent};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
@@ -31,6 +31,22 @@ impl Overlay {
 
     pub(crate) fn new_static_with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
         Self::Static(StaticOverlay::with_title_no_wrap(lines, title))
+    }
+
+    pub(crate) fn new_static_with_title_no_wrap_and_path(
+        lines: Vec<Line<'static>>,
+        title: String,
+        repo_path: String,
+    ) -> Self {
+        Self::Static(StaticOverlay::with_title_no_wrap_and_path(lines, title, repo_path))
+    }
+
+    pub(crate) fn new_static_with_title_no_wrap_refresh(
+        lines: Vec<Line<'static>>,
+        title: String,
+        refresh_callback: Box<dyn Fn() -> std::result::Result<Vec<Line<'static>>, String>>,
+    ) -> Self {
+        Self::Static(StaticOverlay::with_title_no_wrap_refresh(lines, title, refresh_callback))
     }
 
     /// Renders renderables to lines and displays them
@@ -499,9 +515,26 @@ impl PagerView {
             } => {
                 if self.g_pending {
                     self.g_pending = false;
-                    self.cursor_idx = 0;
-                    self.ensure_cursor_visible(area.height as usize);
-                    self.last_match_idx = Some(0);
+                    // Auto-activate commit mode and jump to first commit
+                    if let Some(cache) = self.wrap_cache.as_ref() {
+                        // Find first line with commits
+                        if let Some((first_line, cols)) = cache
+                            .commit_cols
+                            .iter()
+                            .enumerate()
+                            .find(|(_, cols)| !cols.is_empty())
+                        {
+                            self.commit_mode = true; // Activate commit mode
+                            self.commit_cursor_line = Some(first_line);
+                            self.commit_cursor_col = cols[0];
+                            self.ensure_commit_visible(area.width, area.height);
+                        } else {
+                            // No commits found, fallback to normal mode
+                            self.cursor_idx = 0;
+                            self.ensure_cursor_visible(area.height as usize);
+                            self.last_match_idx = Some(0);
+                        }
+                    }
                 } else {
                     self.g_pending = true;
                 }
@@ -515,9 +548,25 @@ impl PagerView {
                 if let Some(cache) = self.wrap_cache.as_ref()
                     && !cache.wrapped.is_empty()
                 {
-                    self.cursor_idx = cache.wrapped.len() - 1;
-                    self.ensure_cursor_visible(area.height as usize);
-                    self.last_match_idx = Some(self.cursor_idx);
+                    // Auto-activate commit mode and jump to last commit
+                    // Find last line with commits
+                    if let Some((last_line, cols)) = cache
+                        .commit_cols
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, cols)| !cols.is_empty())
+                    {
+                        self.commit_mode = true; // Activate commit mode
+                        self.commit_cursor_line = Some(last_line);
+                        self.commit_cursor_col = cols[0];
+                        self.ensure_commit_visible(area.width, area.height);
+                    } else {
+                        // No commits found, fallback to normal mode
+                        self.cursor_idx = cache.wrapped.len() - 1;
+                        self.ensure_cursor_visible(area.height as usize);
+                        self.last_match_idx = Some(self.cursor_idx);
+                    }
                 }
             }
             KeyEvent {
@@ -1521,6 +1570,9 @@ impl TranscriptOverlay {
 pub(crate) struct StaticOverlay {
     view: PagerView,
     is_done: bool,
+    refresh_callback: Option<Box<dyn Fn() -> std::result::Result<Vec<Line<'static>>, String>>>,
+    last_refresh_time: Option<Instant>,
+    refresh_cooldown: Duration,
 }
 
 impl StaticOverlay {
@@ -1528,6 +1580,9 @@ impl StaticOverlay {
         Self {
             view: PagerView::new(vec![Text::from(lines)], title, 0),
             is_done: false,
+            refresh_callback: None,
+            last_refresh_time: None,
+            refresh_cooldown: Duration::from_millis(500),
         }
     }
 
@@ -1535,6 +1590,9 @@ impl StaticOverlay {
         let mut s = Self {
             view: PagerView::new(vec![Text::from(lines)], title, 0),
             is_done: false,
+            refresh_callback: None,
+            last_refresh_time: None,
+            refresh_cooldown: Duration::from_millis(500),
         };
         s.view.wrap_mode = WrapMode::NoWrap;
         s.view.show_cursor_gutter = true;
@@ -1542,11 +1600,123 @@ impl StaticOverlay {
         s
     }
 
+    pub(crate) fn with_title_no_wrap_and_path(
+        lines: Vec<Line<'static>>,
+        title: String,
+        repo_path: String,
+    ) -> Self {
+        let mut s = Self {
+            view: PagerView::new(vec![Text::from(lines)], title, 0),
+            is_done: false,
+            refresh_callback: None,
+            last_refresh_time: None,
+            refresh_cooldown: Duration::from_millis(500),
+        };
+        s.view.wrap_mode = WrapMode::NoWrap;
+        s.view.show_cursor_gutter = true;
+        s.view.commit_mode = true;
+        s
+    }
+
+    pub(crate) fn with_title_no_wrap_refresh(
+        lines: Vec<Line<'static>>,
+        title: String,
+        refresh_callback: Box<dyn Fn() -> std::result::Result<Vec<Line<'static>>, String>>,
+    ) -> Self {
+        let mut s = Self {
+            view: PagerView::new(vec![Text::from(lines)], title, 0),
+            is_done: false,
+            refresh_callback: Some(refresh_callback),
+            last_refresh_time: None,
+            refresh_cooldown: Duration::from_millis(500),
+        };
+        s.view.wrap_mode = WrapMode::NoWrap;
+        s.view.show_cursor_gutter = true;
+        s.view.commit_mode = true;
+        s
+    }
+
+    fn can_refresh(&self) -> bool {
+        if let Some(last_time) = self.last_refresh_time {
+            Instant::now().duration_since(last_time) >= self.refresh_cooldown
+        } else {
+            true
+        }
+    }
+
+    fn refresh(&mut self, tui: &mut crate::tui::Tui) {
+        // Update the last refresh time
+        self.last_refresh_time = Some(Instant::now());
+
+        // First, check if we have a callback and execute it
+        let new_content = if let Some(ref callback) = self.refresh_callback {
+            Some(callback())
+        } else {
+            None
+        };
+
+        // If we have new content to process
+        if let Some(result) = new_content {
+            // Store current position
+            let old_cursor = self.view.cursor_idx;
+            let old_scroll = self.view.scroll_offset;
+
+            // Show "Refreshing..." message with cleared content
+            let refreshing_text = vec![Text::from(vec![
+                Line::from(""),
+                Line::from(""),
+                Line::from("  Refreshing git graph...".dim()),
+            ])];
+            self.view.texts = refreshing_text;
+            self.view.wrap_cache = None;
+
+            // Force a frame to show the "Refreshing..." message
+            let _ = tui.draw(u16::MAX, |frame| {
+                self.render(frame.area(), frame.buffer);
+            });
+
+            // Sleep briefly to make the message visible
+            std::thread::sleep(Duration::from_millis(50));
+
+            // Now actually refresh the content
+            match result {
+                Ok(new_lines) => {
+                    // Update the view with new content
+                    self.view.texts = vec![Text::from(new_lines)];
+                    self.view.wrap_cache = None; // Force re-wrap
+
+                    // Try to restore position
+                    self.view.cursor_idx = old_cursor;
+                    self.view.scroll_offset = old_scroll;
+
+                    // Sleep briefly before showing the new content
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to refresh git graph: {}", e);
+                    // Show error message briefly
+                    let error_text = vec![Text::from(vec![
+                        Line::from(""),
+                        Line::from(""),
+                        Line::from(format!("  Failed to refresh: {}", e).red()),
+                    ])];
+                    self.view.texts = error_text;
+                    self.view.wrap_cache = None;
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+            }
+        }
+    }
+
     fn render_hints(&self, area: Rect, buf: &mut Buffer) {
         let line1 = Rect::new(area.x, area.y, area.width, 1);
         let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
         render_key_hints(line1, buf, PAGER_KEY_HINTS);
-        let pairs = [("q", "quit")];
+        let pairs = if self.refresh_callback.is_some() {
+            [("r", "refresh"), ("q", "quit")]
+        } else {
+            [("q", "quit"), ("", "")]
+        };
         render_key_hints(line2, buf, &pairs);
     }
 
@@ -1563,6 +1733,23 @@ impl StaticOverlay {
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) => match key_event {
+                KeyEvent {
+                    code: KeyCode::Char('r'),
+                    kind: KeyEventKind::Press,
+                    ..
+                } => {
+                    // Refresh the content if callback is available
+                    if self.view.search_input.is_none() && self.refresh_callback.is_some() {
+                        if self.can_refresh() {
+                            self.refresh(tui);
+                            tui.frame_requester().schedule_frame();
+                        } else {
+                            // Cooldown active - ignore silently or could show message
+                            tracing::debug!("Refresh on cooldown");
+                        }
+                    }
+                    Ok(())
+                }
                 KeyEvent {
                     code: KeyCode::Char('q'),
                     kind: KeyEventKind::Press,

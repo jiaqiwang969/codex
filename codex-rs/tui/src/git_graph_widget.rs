@@ -121,10 +121,18 @@ pub fn generate_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'stat
 
 /// Create a new git graph overlay for the TUI with enhanced title.
 pub fn create_git_graph_overlay<P: AsRef<Path>>(repo_path: P) -> Result<Overlay, String> {
-    let lines = generate_git_graph(repo_path)?;
-    Ok(Overlay::new_static_with_title_no_wrap(
+    let path = repo_path.as_ref().to_path_buf();
+    let lines = generate_git_graph(&path)?;
+
+    // Create a refresh callback that regenerates the git graph
+    let refresh_callback = Box::new(move || {
+        generate_git_graph(&path)
+    });
+
+    Ok(Overlay::new_static_with_title_no_wrap_refresh(
         lines,
-        "G I T   G R A P H   │   j/k:scroll   q/Esc:close   │   C t r l + G".to_string(),
+        "G I T   G R A P H   │   j/k:scroll   r:refresh   q/Esc:close   │   C t r l + G".to_string(),
+        refresh_callback,
     ))
 }
 
@@ -193,39 +201,49 @@ fn generate_with_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'sta
             }
         };
 
-        // Find first visible, non-space character
+        // Find first visible, non-space character using char boundaries
+        let mut char_iter = s.char_indices();
+        let mut start_idx = 0;
+
         while i < len {
             if bytes[i] == 0x1b {
                 skip_ansi(&mut i);
                 continue;
             }
-            let ch = bytes[i] as char;
-            if ch.is_whitespace() {
-                i += 1;
-                continue;
+            if let Some((idx, ch)) = char_iter.next() {
+                i = idx + ch.len_utf8();
+                if !ch.is_whitespace() {
+                    start_idx = idx;
+                    break;
+                }
+            } else {
+                break;
             }
-            break;
         }
 
         // If nothing visible, return original
-        if i >= len {
+        if start_idx >= s.len() {
             return s.to_string();
         }
 
-        let start = i;
-        // Find end of the first token (up to next visible whitespace)
-        while i < len {
-            if bytes[i] == 0x1b {
-                skip_ansi(&mut i);
-                continue;
-            }
-            let ch = bytes[i] as char;
+        // Find end of the first token using char boundaries
+        let mut end_idx = start_idx;
+        for (idx, ch) in s[start_idx..].char_indices() {
             if ch.is_whitespace() {
+                end_idx = start_idx + idx;
                 break;
             }
-            i += 1;
+            end_idx = start_idx + idx + ch.len_utf8();
         }
-        let end = i;
+
+        // Ensure we don't have ANSI codes in our indices
+        // Skip if start or end is in middle of ANSI sequence
+        if s.as_bytes().get(start_idx) == Some(&0x1b) || s.as_bytes().get(end_idx) == Some(&0x1b) {
+            return s.to_string();
+        }
+
+        let start = start_idx;
+        let end = end_idx;
 
         // Compose with dim around [start, end)
         let mut out = String::with_capacity(s.len() + 16);
