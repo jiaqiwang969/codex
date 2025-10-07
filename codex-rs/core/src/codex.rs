@@ -707,8 +707,25 @@ impl Session {
     async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
         let rollout_items: Vec<RolloutItem> = items
             .iter()
-            .cloned()
-            .map(RolloutItem::ResponseItem)
+            .map(|item| {
+                let cleaned_item = match item {
+                    ResponseItem::Reasoning {
+                        id,
+                        summary,
+                        content,
+                        encrypted_content: _, // 忽略加密内容
+                    } => {
+                        ResponseItem::Reasoning {
+                            id: id.clone(),
+                            summary: summary.clone(),
+                            content: content.clone(), // 保留明文内容
+                            encrypted_content: None,  // 不保存加密内容
+                        }
+                    }
+                    other => other.clone(),
+                };
+                RolloutItem::ResponseItem(cleaned_item)
+            })
             .collect();
         self.persist_rollout_items(&rollout_items).await;
     }
