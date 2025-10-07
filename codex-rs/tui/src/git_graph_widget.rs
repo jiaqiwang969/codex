@@ -276,7 +276,8 @@ fn generate_with_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'sta
         .into_iter()
         .zip(t_lines)
         .map(|(g, t)| {
-            let t = dim_hash_and_author(&t);
+            // Skip dim_hash_and_author for non-ASCII commits (e.g., Chinese)
+            // to avoid UTF-8 boundary issues
             ansi_escape_line(&format!(" {g}  {t}"))
         })
         .collect();

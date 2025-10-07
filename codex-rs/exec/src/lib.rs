@@ -69,6 +69,7 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
         prompt,
         output_schema: output_schema_path,
         include_plan_tool,
+        print_rollout_path,
         config_overrides,
     } = cli;
 
@@ -77,6 +78,7 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
         // Allow prompt before the subcommand by falling back to the parent-level prompt
         // when the Resume subcommand did not provide its own prompt.
         Some(ExecCommand::Resume(args)) => args.prompt.clone().or(prompt),
+        Some(ExecCommand::ResumeClone(args)) => args.prompt.clone().or(prompt),
         None => prompt,
     };
 
@@ -264,6 +266,17 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
                 .new_conversation(config.clone())
                 .await?
         }
+    } else if let Some(ExecCommand::ResumeClone(args)) = command {
+        let clone_path = find_conversation_path_by_id_str(&config.codex_home, &args.session_id).await?;
+
+        if let Some(path) = clone_path {
+            conversation_manager
+                .clone_conversation_from_rollout(config.clone(), path)
+                .await?
+        } else {
+            eprintln!("Session not found: {}", args.session_id);
+            std::process::exit(1);
+        }
     } else {
         conversation_manager
             .new_conversation(config.clone())
@@ -272,6 +285,11 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
     // Print the effective configuration and prompt so users can see what Codex
     // is using.
     event_processor.print_config_summary(&config, &prompt, &session_configured);
+
+    // Print rollout path if requested (for debugging/verification)
+    if print_rollout_path {
+        eprintln!("Rollout path: {}", session_configured.rollout_path.display());
+    }
 
     info!("Codex initialized with event: {session_configured:?}");
 

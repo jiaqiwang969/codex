@@ -171,6 +171,35 @@ impl ConversationManager {
 
         self.finalize_spawn(codex, conversation_id).await
     }
+
+    /// Clone an entire conversation with all its history into a new conversation
+    /// with a fresh conversation id. Unlike `resume_conversation_from_rollout`,
+    /// this creates a fork with a new id and does NOT modify the original rollout file.
+    pub async fn clone_conversation_from_rollout(
+        &self,
+        config: Config,
+        path: PathBuf,
+    ) -> CodexResult<NewConversation> {
+        // Read the full rollout history
+        let history = RolloutRecorder::get_rollout_history(&path).await?;
+
+        // Convert to Forked to ensure a new conversation_id is generated
+        let rollout_items = history.get_rollout_items();
+        let forked_history = if rollout_items.is_empty() {
+            InitialHistory::New
+        } else {
+            InitialHistory::Forked(rollout_items)
+        };
+
+        // Spawn a new conversation with the full history
+        let auth_manager = self.auth_manager.clone();
+        let CodexSpawnOk {
+            codex,
+            conversation_id,  // This will be a NEW conversation_id
+        } = Codex::spawn(config, auth_manager, forked_history, self.session_source).await?;
+
+        self.finalize_spawn(codex, conversation_id).await
+    }
 }
 
 /// Return a prefix of `items` obtained by cutting strictly before the nth user message
