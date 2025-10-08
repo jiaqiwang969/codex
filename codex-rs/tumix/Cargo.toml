@@ -1,0 +1,25 @@
+[package]
+name = "codex-tumix"
+version = { workspace = true }
+edition = "2024"
+
+[lib]
+name = "codex_tumix"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["process", "fs", "io-util", "rt-multi-thread", "macros"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+git2 = { version = "0.20", default-features = false }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tracing-subscriber = "0.3"
+
+[[example]]
+name = "tumix-test"
+path = "examples/tumix-test.rs"
