@@ -195,7 +195,7 @@ impl ConversationManager {
         let auth_manager = self.auth_manager.clone();
         let CodexSpawnOk {
             codex,
-            conversation_id,  // This will be a NEW conversation_id
+            conversation_id, // This will be a NEW conversation_id
         } = Codex::spawn(config, auth_manager, forked_history, self.session_source).await?;
 
         self.finalize_spawn(codex, conversation_id).await

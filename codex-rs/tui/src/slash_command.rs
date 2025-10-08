@@ -14,6 +14,7 @@ pub enum SlashCommand {
     Review,
     New,
     Init,
+    Tumix,
     Compact,
     Undo,
     Diff,
@@ -32,6 +33,7 @@ impl SlashCommand {
         match self {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
+            SlashCommand::Tumix => "run TUMIX multi-agent parallel execution (Round 1)",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Undo => "restore the workspace to the last Codex snapshot",
@@ -59,6 +61,7 @@ impl SlashCommand {
         match self {
             SlashCommand::New
             | SlashCommand::Init
+            | SlashCommand::Tumix
             | SlashCommand::Compact
             | SlashCommand::Undo
             | SlashCommand::Model

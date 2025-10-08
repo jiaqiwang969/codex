@@ -78,6 +78,11 @@ pub struct Cli {
     #[arg(long = "print-rollout-path", default_value_t = false)]
     pub print_rollout_path: bool,
 
+    /// Write session metadata (session_id, rollout_path) to the specified file immediately after session initialization.
+    /// The file will be created/overwritten with JSON containing session_id and rollout_path.
+    #[arg(long = "id-output", value_name = "FILE")]
+    pub id_output: Option<PathBuf>,
+
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]

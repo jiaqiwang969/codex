@@ -972,6 +972,7 @@ dependencies = [
  "codex-responses-api-proxy",
  "codex-rmcp-client",
  "codex-tui",
+ "codex-tumix",
  "ctor 0.5.0",
  "owo-colors",
  "predicates",
@@ -1405,6 +1406,7 @@ dependencies = [
  "codex-login",
  "codex-ollama",
  "codex-protocol",
+ "codex-tumix",
  "color-eyre",
  "crossterm 0.28.1",
  "diffy",
@@ -1444,6 +1446,21 @@ dependencies = [
  "unicode-width 0.2.1",
  "url",
  "vt100",
+]
+
+[[package]]
+name = "codex-tumix"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "git2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

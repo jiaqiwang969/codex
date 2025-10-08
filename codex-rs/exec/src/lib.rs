@@ -70,6 +70,7 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
         output_schema: output_schema_path,
         include_plan_tool,
         print_rollout_path,
+        id_output,
         config_overrides,
     } = cli;
 
@@ -267,7 +268,8 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
                 .await?
         }
     } else if let Some(ExecCommand::ResumeClone(args)) = command {
-        let clone_path = find_conversation_path_by_id_str(&config.codex_home, &args.session_id).await?;
+        let clone_path =
+            find_conversation_path_by_id_str(&config.codex_home, &args.session_id).await?;
 
         if let Some(path) = clone_path {
             conversation_manager
@@ -288,7 +290,36 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
 
     // Print rollout path if requested (for debugging/verification)
     if print_rollout_path {
-        eprintln!("Rollout path: {}", session_configured.rollout_path.display());
+        eprintln!(
+            "Rollout path: {}",
+            session_configured.rollout_path.display()
+        );
+    }
+
+    // Write session metadata to file if requested
+    if let Some(id_output_path) = id_output {
+        let metadata = serde_json::json!({
+            "session_id": session_configured.session_id.to_string(),
+            "rollout_path": session_configured.rollout_path.display().to_string(),
+        });
+
+        match std::fs::write(&id_output_path, serde_json::to_string_pretty(&metadata)?) {
+            Ok(_) => {
+                debug!("Wrote session metadata to: {}", id_output_path.display());
+            }
+            Err(e) => {
+                error!(
+                    "Failed to write session metadata to {}: {}",
+                    id_output_path.display(),
+                    e
+                );
+                eprintln!(
+                    "Warning: Failed to write session metadata to {}: {}",
+                    id_output_path.display(),
+                    e
+                );
+            }
+        }
     }
 
     info!("Codex initialized with event: {session_configured:?}");

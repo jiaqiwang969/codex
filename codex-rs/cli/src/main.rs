@@ -94,6 +94,9 @@ enum Subcommand {
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
 
+    /// [EXPERIMENTAL] Run TUMIX multi-agent parallel execution framework.
+    Tumix(TumixCommand),
+
     /// Internal: run the responses API proxy.
     #[clap(hide = true)]
     ResponsesApiProxy(ResponsesApiProxyArgs),
@@ -194,6 +197,16 @@ struct GenerateTsCommand {
     /// Optional path to the Prettier executable to format generated files
     #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
     prettier: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct TumixCommand {
+    /// Parent session ID to clone conversation history from
+    #[arg(value_name = "SESSION_ID")]
+    session_id: String,
+
+    #[clap(skip)]
+    config_overrides: CliConfigOverrides,
 }
 
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
@@ -381,6 +394,39 @@ async fn cli_main(codex_linux_sandbox_exe: Option<PathBuf>) -> anyhow::Result<()
         Some(Subcommand::GenerateTs(gen_cli)) => {
             codex_protocol_ts::generate_ts(&gen_cli.out_dir, gen_cli.prettier.as_deref())?;
         }
+        Some(Subcommand::Tumix(mut tumix_cli)) => {
+            prepend_config_flags(
+                &mut tumix_cli.config_overrides,
+                root_config_overrides.clone(),
+            );
+            run_tumix_command(tumix_cli).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_tumix_command(tumix_cli: TumixCommand) -> anyhow::Result<()> {
+    println!("🚀 Starting TUMIX Round 1...");
+    println!("📋 Parent session: {}", &tumix_cli.session_id);
+    println!();
+
+    // Create a progress callback that prints to stdout
+    let progress_cb = Some(Box::new(|msg: String| {
+        println!("{}", msg);
+    }) as codex_tumix::ProgressCallback);
+
+    let result = codex_tumix::run_tumix(tumix_cli.session_id, None, progress_cb).await?;
+
+    println!();
+    println!("✨ TUMIX Round 1 completed successfully!");
+    println!("📊 Results: {} agents executed", result.agents.len());
+    println!();
+    println!("📁 Session list saved to: .tumix/round1_sessions.json");
+    println!();
+    println!("🌳 Git branches created:");
+    for agent in &result.agents {
+        println!("  - {} (commit: {})", agent.branch, &agent.commit_hash[..8]);
     }
 
     Ok(())

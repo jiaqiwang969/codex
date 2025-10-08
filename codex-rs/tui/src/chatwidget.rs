@@ -1070,7 +1070,10 @@ impl ChatWidget {
                         }
                     }
                     InputResult::Command(cmd) => {
-                        self.dispatch_command(cmd);
+                        self.dispatch_command(cmd, None);
+                    }
+                    InputResult::CommandWithArgs(cmd, args) => {
+                        self.dispatch_command(cmd, Some(args));
                     }
                     InputResult::None => {}
                 }
@@ -1093,7 +1096,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn dispatch_command(&mut self, cmd: SlashCommand) {
+    fn dispatch_command(&mut self, cmd: SlashCommand, args: Option<String>) {
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
@@ -1110,6 +1113,9 @@ impl ChatWidget {
             SlashCommand::Init => {
                 const INIT_PROMPT: &str = include_str!("../prompt_for_init_command.md");
                 self.submit_text_message(INIT_PROMPT.to_string());
+            }
+            SlashCommand::Tumix => {
+                self.handle_tumix_command(args);
             }
             SlashCommand::Compact => {
                 self.clear_token_usage();
@@ -1847,6 +1853,119 @@ impl ChatWidget {
         } else {
             self.submit_op(Op::ListMcpTools);
         }
+    }
+
+    pub(crate) fn handle_tumix_command(&mut self, user_prompt: Option<String>) {
+        // If no prompt provided, show help instead of starting TUMIX
+        if user_prompt.is_none() {
+            let help_msg = "🚀 **TUMIX** - 多智能体并行执行框架\n\n\
+                 **用法：** `/tumix <任务描述>`\n\n\
+                 **示例：**\n\
+                 • `/tumix 实现一个Rust自动微分库`\n\
+                 • `/tumix 优化这段代码的性能`\n\
+                 • `/tumix 设计分布式缓存系统`\n\n\
+                 **工作流程：**\n\
+                 1. Meta-agent 分析任务复杂度，灵活设计专家团队（2-15个agent）\n\
+                 2. 每个 agent 在独立的 Git worktree 中工作\n\
+                 3. 所有 agents 并行执行\n\
+                 4. 结果保存到 `.tumix/round1_sessions.json`\n\
+                 5. 创建分支：`round1-agent-01`, `round1-agent-02`...\n\n\
+                 💡 **Agent数量根据任务自动调整：**\n\
+                 • 简单任务 → 2-3个agent\n\
+                 • 中等任务 → 4-6个agent\n\
+                 • 复杂任务 → 7-10个agent\n\
+                 • 超大任务 → 10-15个agent\n\n\
+                 _请提供任务描述以启动 TUMIX_";
+
+            self.add_to_history(history_cell::new_info_event(help_msg.to_string(), None));
+            self.request_redraw();
+            return;
+        }
+
+        let session_id = match &self.conversation_id {
+            Some(id) => id.to_string(),
+            None => {
+                self.add_to_history(history_cell::new_error_event(
+                    "Cannot run `/tumix`: No active session".to_string(),
+                ));
+                self.request_redraw();
+                return;
+            }
+        };
+
+        // Add "starting TUMIX" message with user task
+        let start_msg = format!(
+            "🚀 Starting TUMIX Round 1...\n\n\
+             Task: {}\n\n\
+             Meta-agent will analyze task complexity and spawn specialized agents.\n\
+             Check `.tumix/round1_sessions.json` for real-time progress.\n\n\
+             📋 Session ID: {}\n\
+             🔧 Command will be saved to: `.tumix/meta_agent_command.sh`",
+            user_prompt.as_ref().unwrap(),
+            &session_id[..16.min(session_id.len())]
+        );
+
+        self.add_to_history(history_cell::new_info_event(start_msg, None));
+        self.request_redraw();
+
+        // Spawn async task to run TUMIX
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            // Create progress callback to send updates to GUI
+            let tx_progress = tx.clone();
+            let progress_cb = Some(Box::new(move |msg: String| {
+                tx_progress.send(AppEvent::InsertHistoryCell(Box::new(
+                    history_cell::new_info_event(msg, None),
+                )));
+            }) as codex_tumix::ProgressCallback);
+
+            match codex_tumix::run_tumix(session_id, user_prompt, progress_cb).await {
+                Ok(result) => {
+                    if result.agents.is_empty() {
+                        let msg = "⚠️ TUMIX Round 1 completed but generated 0 agents.\n\n\
+                                   This usually means meta-agent execution failed.\n\
+                                   Please check:\n\
+                                   • Codex binary is accessible at ~/.npm-global/bin/codex\n\
+                                   • Session ID is valid\n\
+                                   • Run with RUST_LOG=debug for detailed logs"
+                            .to_string();
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_error_event(msg),
+                        )));
+                    } else {
+                        let msg = format!(
+                            "✨ TUMIX Round 1 completed successfully!\n\n\
+                             📊 {} agents executed\n\
+                             📁 Results saved to: .tumix/round1_sessions.json\n\n\
+                             🌳 Branches created:\n{}",
+                            result.agents.len(),
+                            result
+                                .agents
+                                .iter()
+                                .map(|a| format!(
+                                    "  - {} (commit: {})",
+                                    a.branch,
+                                    &a.commit_hash[..8]
+                                ))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        );
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_info_event(msg, None),
+                        )));
+                    }
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "❌ TUMIX failed: {e}\n\n\
+                                       Run with RUST_LOG=debug to see detailed error output."
+                    );
+                    tx.send(AppEvent::InsertHistoryCell(Box::new(
+                        history_cell::new_error_event(msg),
+                    )));
+                }
+            }
+        });
     }
 
     /// Forward file-search results to the bottom pane.

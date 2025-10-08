@@ -125,13 +125,12 @@ pub fn create_git_graph_overlay<P: AsRef<Path>>(repo_path: P) -> Result<Overlay,
     let lines = generate_git_graph(&path)?;
 
     // Create a refresh callback that regenerates the git graph
-    let refresh_callback = Box::new(move || {
-        generate_git_graph(&path)
-    });
+    let refresh_callback = Box::new(move || generate_git_graph(&path));
 
     Ok(Overlay::new_static_with_title_no_wrap_refresh(
         lines,
-        "G I T   G R A P H   │   j/k:scroll   r:refresh   q/Esc:close   │   C t r l + G".to_string(),
+        "G I T   G R A P H   │   j/k:scroll   r:refresh   q/Esc:close   │   C t r l + G"
+            .to_string(),
         refresh_callback,
     ))
 }

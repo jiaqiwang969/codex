@@ -66,6 +66,7 @@ const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
 pub enum InputResult {
     Submitted(String),
     Command(SlashCommand),
+    CommandWithArgs(SlashCommand, String),
     None,
 }
 
@@ -903,13 +904,24 @@ impl ChatComposer {
                 // literal text.
                 let first_line = self.textarea.text().lines().next().unwrap_or("");
                 if let Some((name, rest)) = parse_slash_name(first_line)
-                    && rest.is_empty()
                     && let Some((_n, cmd)) = built_in_slash_commands()
                         .into_iter()
                         .find(|(n, _)| *n == name)
                 {
+                    // Clone rest before clearing textarea to avoid borrow checker issues
+                    let rest_str = rest.trim().to_string();
+                    let has_args = !rest_str.is_empty();
+
                     self.textarea.set_text("");
-                    return (InputResult::Command(cmd), true);
+
+                    // Special case: /tumix can accept optional arguments
+                    if cmd == SlashCommand::Tumix && has_args {
+                        return (InputResult::CommandWithArgs(cmd, rest_str), true);
+                    }
+                    // Default: command without arguments
+                    if !has_args {
+                        return (InputResult::Command(cmd), true);
+                    }
                 }
                 // If we're in a paste-like burst capture, treat Enter as part of the burst
                 // and accumulate it rather than submitting or inserting immediately.
@@ -2245,8 +2257,11 @@ mod tests {
             InputResult::Command(cmd) => {
                 assert_eq!(cmd.command(), "init");
             }
+            InputResult::CommandWithArgs(_, args) => {
+                panic!("expected command without args, but composer received args: {args}");
+            }
             InputResult::Submitted(text) => {
-                panic!("expected command dispatch, but composer submitted literal text: {text}")
+                panic!("expected command dispatch, but composer submitted literal text: {text}");
             }
             InputResult::None => panic!("expected Command result for '/init'"),
         }
@@ -2318,8 +2333,13 @@ mod tests {
             composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match result {
             InputResult::Command(cmd) => assert_eq!(cmd.command(), "diff"),
+            InputResult::CommandWithArgs(_, args) => {
+                panic!("expected command without args after Tab completion, got args: {args}");
+            }
             InputResult::Submitted(text) => {
-                panic!("expected command dispatch after Tab completion, got literal submit: {text}")
+                panic!(
+                    "expected command dispatch after Tab completion, got literal submit: {text}"
+                );
             }
             InputResult::None => panic!("expected Command result for '/diff'"),
         }
@@ -2351,8 +2371,11 @@ mod tests {
             InputResult::Command(cmd) => {
                 assert_eq!(cmd.command(), "mention");
             }
+            InputResult::CommandWithArgs(_, args) => {
+                panic!("expected command without args, but composer received args: {args}");
+            }
             InputResult::Submitted(text) => {
-                panic!("expected command dispatch, but composer submitted literal text: {text}")
+                panic!("expected command dispatch, but composer submitted literal text: {text}");
             }
             InputResult::None => panic!("expected Command result for '/mention'"),
         }
