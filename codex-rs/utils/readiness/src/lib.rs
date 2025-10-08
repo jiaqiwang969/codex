@@ -173,7 +173,11 @@ mod errors {
 mod tests {
     use std::sync::Arc;
 
-    use super::{Readiness, ReadinessFlag, Token, errors::ReadinessError};
+    use super::Readiness;
+    use super::ReadinessFlag;
+    use super::Token;
+    use super::errors::ReadinessError;
+    use assert_matches::assert_matches;
 
     #[tokio::test]
     async fn subscribe_and_mark_ready_roundtrip() -> Result<(), ReadinessError> {
@@ -242,6 +246,6 @@ mod tests {
             .subscribe()
             .await
             .expect_err("contended subscribe should report a lock failure");
-        assert!(matches!(err, ReadinessError::TokenLockFailed));
+        assert_matches!(err, ReadinessError::TokenLockFailed);
     }
 }

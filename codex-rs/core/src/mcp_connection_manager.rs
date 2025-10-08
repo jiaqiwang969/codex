@@ -6,15 +6,16 @@
 //! in a single aggregated map using the fully-qualified tool name
 //! `"<server><MCP_TOOL_NAME_DELIMITER><tool>"` as the key.
 
-use std::{
-    collections::{HashMap, HashSet},
-    ffi::OsString,
-    sync::Arc,
-    time::Duration,
-};
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::env;
+use std::ffi::OsString;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use codex_mcp_client::McpClient;
+use codex_rmcp_client::OAuthCredentialsStoreMode;
 use codex_rmcp_client::RmcpClient;
 use mcp_types::{ClientCapabilities, Implementation, Tool};
 
@@ -119,9 +120,11 @@ impl McpClientAdapter {
         bearer_token: Option<String>,
         params: mcp_types::InitializeRequestParams,
         startup_timeout: Duration,
+        store_mode: OAuthCredentialsStoreMode,
     ) -> Result<Self> {
         let client = Arc::new(
-            RmcpClient::new_streamable_http_client(&server_name, &url, bearer_token).await?,
+            RmcpClient::new_streamable_http_client(&server_name, &url, bearer_token, store_mode)
+                .await?,
         );
         client.initialize(params, Some(startup_timeout)).await?;
         Ok(McpClientAdapter::Rmcp(client))
@@ -176,6 +179,7 @@ impl McpConnectionManager {
     pub async fn new(
         mcp_servers: HashMap<String, McpServerConfig>,
         use_rmcp_client: bool,
+        store_mode: OAuthCredentialsStoreMode,
     ) -> Result<(Self, ClientStartErrors)> {
         // Early exit if no servers are configured.
         if mcp_servers.is_empty() {
@@ -198,6 +202,14 @@ impl McpConnectionManager {
 
             let startup_timeout = cfg.startup_timeout_sec.unwrap_or(DEFAULT_STARTUP_TIMEOUT);
             let tool_timeout = cfg.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
+
+            let resolved_bearer_token = match &cfg.transport {
+                McpServerTransportConfig::StreamableHttp {
+                    bearer_token_env_var,
+                    ..
+                } => resolve_bearer_token(&server_name, bearer_token_env_var.as_deref()),
+                _ => Ok(None),
+            };
 
             join_set.spawn(async move {
                 let McpServerConfig { transport, .. } = cfg;
@@ -236,13 +248,14 @@ impl McpConnectionManager {
                         )
                         .await
                     }
-                    McpServerTransportConfig::StreamableHttp { url, bearer_token } => {
+                    McpServerTransportConfig::StreamableHttp { url, .. } => {
                         McpClientAdapter::new_streamable_http_client(
                             server_name.clone(),
                             url,
-                            bearer_token,
+                            resolved_bearer_token.unwrap_or_default(),
                             params,
                             startup_timeout,
+                            store_mode,
                         )
                         .await
                     }
@@ -327,6 +340,33 @@ impl McpConnectionManager {
         self.tools
             .get(tool_name)
             .map(|tool| (tool.server_name.clone(), tool.tool_name.clone()))
+    }
+}
+
+fn resolve_bearer_token(
+    server_name: &str,
+    bearer_token_env_var: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(env_var) = bearer_token_env_var else {
+        return Ok(None);
+    };
+
+    match env::var(env_var) {
+        Ok(value) => {
+            if value.is_empty() {
+                Err(anyhow!(
+                    "Environment variable {env_var} for MCP server '{server_name}' is empty"
+                ))
+            } else {
+                Ok(Some(value))
+            }
+        }
+        Err(env::VarError::NotPresent) => Err(anyhow!(
+            "Environment variable {env_var} for MCP server '{server_name}' is not set"
+        )),
+        Err(env::VarError::NotUnicode(_)) => Err(anyhow!(
+            "Environment variable {env_var} for MCP server '{server_name}' contains invalid Unicode"
+        )),
     }
 }
 

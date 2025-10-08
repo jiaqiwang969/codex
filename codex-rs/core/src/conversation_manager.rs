@@ -239,6 +239,7 @@ fn truncate_before_nth_user_message(history: InitialHistory, n: usize) -> Initia
 mod tests {
     use super::*;
     use crate::codex::make_session_and_context;
+    use assert_matches::assert_matches;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ReasoningItemReasoningSummary;
     use codex_protocol::models::ResponseItem;
@@ -265,7 +266,7 @@ mod tests {
 
     #[test]
     fn drops_from_last_user_only() {
-        let items = vec![
+        let items = [
             user_msg("u1"),
             assistant_msg("a1"),
             assistant_msg("a2"),
@@ -312,7 +313,7 @@ mod tests {
             .map(RolloutItem::ResponseItem)
             .collect();
         let truncated2 = truncate_before_nth_user_message(InitialHistory::Forked(initial2), 2);
-        assert!(matches!(truncated2, InitialHistory::New));
+        assert_matches!(truncated2, InitialHistory::New);
     }
 
     #[test]

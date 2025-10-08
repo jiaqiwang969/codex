@@ -1,17 +1,30 @@
-use codex_core::{
-    CodexAuth, CodexConversation, ContentItem, ConversationManager, ModelProviderInfo,
-    REVIEW_PROMPT, ResponseItem, built_in_model_providers,
-    config::Config,
-    protocol::{
-        ConversationPathResponseEvent, ENVIRONMENT_CONTEXT_OPEN_TAG, EventMsg,
-        ExitedReviewModeEvent, InputItem, Op, ReviewCodeLocation, ReviewFinding, ReviewLineRange,
-        ReviewOutputEvent, ReviewRequest, RolloutItem, RolloutLine,
-    },
-};
-use core_test_support::{
-    load_default_config_for_test, load_sse_fixture_with_id_from_str, skip_if_no_network,
-    wait_for_event,
-};
+use codex_core::CodexAuth;
+use codex_core::CodexConversation;
+use codex_core::ContentItem;
+use codex_core::ConversationManager;
+use codex_core::ModelProviderInfo;
+use codex_core::REVIEW_PROMPT;
+use codex_core::ResponseItem;
+use codex_core::built_in_model_providers;
+use codex_core::config::Config;
+use codex_core::protocol::ConversationPathResponseEvent;
+use codex_core::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::ExitedReviewModeEvent;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use codex_core::protocol::ReviewCodeLocation;
+use codex_core::protocol::ReviewFinding;
+use codex_core::protocol::ReviewLineRange;
+use codex_core::protocol::ReviewOutputEvent;
+use codex_core::protocol::ReviewRequest;
+use codex_core::protocol::RolloutItem;
+use codex_core::protocol::RolloutLine;
+use core_test_support::load_default_config_for_test;
+use core_test_support::load_sse_fixture_with_id_from_str;
+use core_test_support::skip_if_no_network;
+use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
 use std::{path::PathBuf, sync::Arc};
 use tempfile::TempDir;
@@ -246,24 +259,28 @@ async fn review_does_not_emit_agent_message_on_structured_output() {
         .unwrap();
 
     // Drain events until TaskComplete; ensure none are AgentMessage.
-    use tokio::time::{Duration, timeout};
     let mut saw_entered = false;
     let mut saw_exited = false;
-    loop {
-        let ev = timeout(Duration::from_secs(5), codex.next_event())
-            .await
-            .expect("timeout waiting for event")
-            .expect("stream ended unexpectedly");
-        match ev.msg {
-            EventMsg::TaskComplete(_) => break,
+    wait_for_event_with_timeout(
+        &codex,
+        |event| match event {
+            EventMsg::TaskComplete(_) => true,
             EventMsg::AgentMessage(_) => {
                 panic!("unexpected AgentMessage during review with structured output")
             }
-            EventMsg::EnteredReviewMode(_) => saw_entered = true,
-            EventMsg::ExitedReviewMode(_) => saw_exited = true,
-            _ => {}
-        }
-    }
+            EventMsg::EnteredReviewMode(_) => {
+                saw_entered = true;
+                false
+            }
+            EventMsg::ExitedReviewMode(_) => {
+                saw_exited = true;
+                false
+            }
+            _ => false,
+        },
+        tokio::time::Duration::from_secs(5),
+    )
+    .await;
     assert!(saw_entered && saw_exited, "missing review lifecycle events");
 
     server.verify().await;
@@ -426,7 +443,7 @@ async fn review_input_isolated_from_parent_history() {
     .await;
     let _complete = wait_for_event(&codex, |ev| matches!(ev, EventMsg::TaskComplete(_))).await;
 
-    // Assert the request `input` contains the environment context followed by the review prompt.
+    // Assert the request `input` contains the environment context followed by the user review prompt.
     let request = &server.received_requests().await.unwrap()[0];
     let body = request.body_json::<serde_json::Value>().unwrap();
     let input = body["input"].as_array().expect("input array");
@@ -454,8 +471,13 @@ async fn review_input_isolated_from_parent_history() {
     assert_eq!(review_msg["role"].as_str().unwrap(), "user");
     assert_eq!(
         review_msg["content"][0]["text"].as_str().unwrap(),
-        format!("{REVIEW_PROMPT}\n\n---\n\nNow, here's your task: Please review only this",)
+        review_prompt,
+        "user message should only contain the raw review prompt"
     );
+
+    // Ensure the REVIEW_PROMPT rubric is sent via instructions.
+    let instructions = body["instructions"].as_str().expect("instructions string");
+    assert_eq!(instructions, REVIEW_PROMPT);
 
     // Also verify that a user interruption note was recorded in the rollout.
     codex.submit(Op::GetPath).await.unwrap();
