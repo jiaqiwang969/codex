@@ -7,6 +7,7 @@ use crate::worktree::AgentWorktree;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
@@ -14,6 +15,37 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+
+fn load_agent_prompt_template() -> Result<String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let default_path = PathBuf::from(home).join(".codex/prompts/tumix-agent.md");
+    let prompt_path = std::env::var("TUMIX_AGENT_PROMPT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or(default_path);
+
+    std::fs::read_to_string(&prompt_path).with_context(|| {
+        format!(
+            "无法读取 TUMIX agent 提示词，缺少文件：{}。请先创建模板。",
+            prompt_path.display()
+        )
+    })
+}
+
+fn strip_front_matter(template: &str) -> &str {
+    let text = template.trim_start_matches('\u{feff}');
+    if let Some(rest) = text.strip_prefix("---\n") {
+        if let Some(pos) = rest.find("\n---") {
+            let body = &rest[pos + 4..];
+            return body.trim_start_matches(|c| c == '\n' || c == '\r');
+        }
+    } else if let Some(rest) = text.strip_prefix("---\r\n") {
+        if let Some(pos) = rest.find("\r\n---") {
+            let body = &rest[pos + 5..];
+            return body.trim_start_matches(|c| c == '\n' || c == '\r');
+        }
+    }
+    text
+}
 
 /// Executes agents with resume-clone
 #[derive(Clone)]
@@ -36,16 +68,41 @@ impl AgentExecutor {
         run_id: &str,
         cancel_token: CancellationToken,
     ) -> Result<AgentResult> {
-        // 1. Build prompt
-        let prompt = format!(
-            r#"
-你的角色：{} - {}
+        let docs_dir = worktree.path.join(".tumix").join("docs").join(run_id);
+        std::fs::create_dir_all(&docs_dir)
+            .context("Failed to prepare .tumix/docs directory for agent artifacts")?;
 
-基于之前对话中用户的需求，请从你的专业角度实现解决方案。
-不做任何代码修改和编译操作，最终要求生成一份pdf问题解析报告，该报告通过xelatex编译，放到docs下面，完成后系统会自动提交。
-"#,
-            config.name, config.role
-        );
+        let run_slug = run_id.replace('-', "_");
+        let base_filename = format!("tumix_{run_slug}_agent_{}", config.id);
+        let tex_path = docs_dir.join(format!("{base_filename}.tex"));
+        let pdf_path = docs_dir.join(format!("{base_filename}.pdf"));
+
+        let tex_abs = match tex_path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => tex_path.clone(),
+        };
+        let pdf_abs = match pdf_path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => pdf_path.clone(),
+        };
+        let docs_dir_abs = match docs_dir.canonicalize() {
+            Ok(path) => path,
+            Err(_) => docs_dir.clone(),
+        };
+
+        let tex_path_str = tex_abs.to_string_lossy().into_owned();
+        let pdf_path_str = pdf_abs.to_string_lossy().into_owned();
+        let docs_dir_str = docs_dir_abs.to_string_lossy().into_owned();
+
+        // 1. Build prompt
+        let template = load_agent_prompt_template()?;
+        let template_body = strip_front_matter(&template);
+        let prompt = template_body
+            .replace("$NAME", &config.name)
+            .replace("$ROLE", &config.role)
+            .replace("$TEX_FILE", &tex_path_str)
+            .replace("$PDF_FILE", &pdf_path_str)
+            .replace("$DOCS_DIR", &docs_dir_str);
 
         // 2. Execute codex with resume-clone
         let codex_bin = std::env::var("CODEX_BIN").unwrap_or_else(|_| {

@@ -3,7 +3,39 @@
 use crate::AgentConfig;
 use anyhow::Context;
 use anyhow::Result;
+use std::path::PathBuf;
 use tokio::process::Command;
+
+fn load_meta_prompt_template() -> Result<String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let default_path = PathBuf::from(home).join(".codex/prompts/tumix-meta.md");
+    let prompt_path = std::env::var("TUMIX_META_PROMPT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or(default_path);
+
+    std::fs::read_to_string(&prompt_path).with_context(|| {
+        format!(
+            "无法读取 TUMIX 元代理提示词，缺少文件：{}。请先创建模板。",
+            prompt_path.display()
+        )
+    })
+}
+
+fn strip_front_matter(template: &str) -> &str {
+    let text = template.trim_start_matches('\u{feff}');
+    if let Some(rest) = text.strip_prefix("---\n") {
+        if let Some(pos) = rest.find("\n---") {
+            let body = &rest[pos + 4..];
+            return body.trim_start_matches(|c| c == '\n' || c == '\r');
+        }
+    } else if let Some(rest) = text.strip_prefix("---\r\n") {
+        if let Some(pos) = rest.find("\r\n---") {
+            let body = &rest[pos + 5..];
+            return body.trim_start_matches(|c| c == '\n' || c == '\r');
+        }
+    }
+    text
+}
 
 /// Generate agent configurations via meta-agent (flexible count based on task)
 pub async fn generate_agents(
@@ -13,47 +45,12 @@ pub async fn generate_agents(
     let task_desc = if let Some(ref prompt) = user_prompt {
         format!("用户任务：{}\n\n", prompt)
     } else {
-        String::new()
+        "（当前对话未额外提供用户提示）\n\n".to_string()
     };
 
-    let meta_prompt = format!(
-        r#"
-{}基于当前对话历史中用户的需求，分析任务复杂度，设计合适数量的专业角色来协作完成。
-
-根据任务复杂度灵活决定agent数量：
-- 简单任务：2-3个agent（如单一功能实现）
-- 中等任务：4-6个agent（如小型系统）
-- 复杂任务：7-10个agent（如完整项目）
-- 超大任务：10-15个agent（如企业级系统）
-
-输出agent配置的JSON数组，示例格式：
-[
-  {{
-    "id": "01",
-    "name": "系统架构师",
-    "role": "设计整体架构和模块划分"
-  }},
-  {{
-    "id": "02",
-    "name": "后端工程师",
-    "role": "实现核心业务逻辑"
-  }},
-  {{
-    "id": "03",
-    "name": "前端工程师",
-    "role": "实现用户界面"
-  }}
-]
-
-要求：
-- 根据任务复杂度灵活决定agent数量（2-15个）
-- id从"01"开始连续编号（如01, 02, 03...）
-- 每个角色要有明确的专业分工，避免重复
-- 角色设计要符合实际项目分工逻辑
-- 只输出JSON数组，不要其他内容
-"#,
-        task_desc
-    );
+    let meta_prompt_template = load_meta_prompt_template()?;
+    let meta_prompt_body = strip_front_matter(&meta_prompt_template);
+    let meta_prompt = meta_prompt_body.replace("$1", &task_desc);
 
     // Get codex binary path from environment or use default npm global installation
     let codex_bin = std::env::var("CODEX_BIN").unwrap_or_else(|_| {
