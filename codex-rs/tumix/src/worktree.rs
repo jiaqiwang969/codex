@@ -43,21 +43,39 @@ impl WorktreeManager {
         // Create new worktree based on current branch (HEAD)
         let repo_root = self
             .repo
-            .path()
-            .parent()
-            .context("Failed to get repo root")?;
+            .workdir()
+            .context("Failed to locate repository workdir for worktree creation")?;
+
+        let base_commit = self
+            .repo
+            .head()
+            .context("Failed to resolve repository HEAD for worktree creation")?
+            .peel_to_commit()
+            .context("Failed to peel HEAD to commit for worktree creation")?;
+
+        let base_ref = base_commit.id().to_string();
 
         tracing::debug!(
-            "Creating worktree for agent {}: {}",
+            "Creating worktree for agent {} from {}: {}",
             agent_id,
+            &base_ref[..8.min(base_ref.len())],
             worktree_path.display()
         );
 
-        let output = Command::new("git")
-            .args(["worktree", "add", "-b", &branch_name])
+        let mut command = Command::new("git");
+        command
+            .arg("worktree")
+            .arg("add")
+            .arg("-b")
+            .arg(&branch_name)
             .arg(&worktree_path)
-            .arg("HEAD")
+            .arg(&base_ref)
             .current_dir(repo_root)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE");
+
+        let output = command
             .output()
             .context("Failed to execute git worktree command")?;
 
