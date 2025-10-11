@@ -2,7 +2,7 @@
 
 ## ✅ Status: FULLY INTEGRATED
 
-The `/tumix` slash command is now fully integrated into the Codex GUI.
+The `/tumix` slash command is now fully integrated into the Codex GUI. A companion `/tumix-stop` command allows users to cancel in-flight agent runs (optionally targeting a specific session id).
 
 ## Changes Made
 

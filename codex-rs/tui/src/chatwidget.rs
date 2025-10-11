@@ -1117,6 +1117,9 @@ impl ChatWidget {
             SlashCommand::Tumix => {
                 self.handle_tumix_command(args);
             }
+            SlashCommand::TumixStop => {
+                self.handle_tumix_stop_command(args);
+            }
             SlashCommand::Compact => {
                 self.clear_token_usage();
                 self.app_event_tx.send(AppEvent::CodexOp(Op::Compact));
@@ -1893,6 +1896,8 @@ impl ChatWidget {
             }
         };
 
+        let prompt_text = user_prompt.as_deref().unwrap_or("");
+
         // Add "starting TUMIX" message with user task
         let start_msg = format!(
             "🚀 Starting TUMIX Round 1...\n\n\
@@ -1901,7 +1906,7 @@ impl ChatWidget {
              Check `.tumix/round1_sessions.json` for real-time progress.\n\n\
              📋 Session ID: {}\n\
              🔧 Command will be saved to: `.tumix/meta_agent_command.sh`",
-            user_prompt.as_ref().unwrap(),
+            prompt_text,
             &session_id[..16.min(session_id.len())]
         );
 
@@ -1966,6 +1971,64 @@ impl ChatWidget {
                 }
             }
         });
+    }
+
+    pub(crate) fn handle_tumix_stop_command(&mut self, target: Option<String>) {
+        let target_session = target.as_ref().and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        if let Some(session_id) = target_session {
+            match codex_tumix::cancel_run(&session_id) {
+                Some(run) => {
+                    let short = run.run_id.chars().take(8).collect::<String>();
+                    let msg = format!(
+                        "🛑 Requested cancellation for TUMIX run {short}\n\
+                         • Session: {session}\n\
+                         • Run ID: {run_id}",
+                        short = short,
+                        session = session_id,
+                        run_id = run.run_id
+                    );
+                    self.add_to_history(history_cell::new_info_event(msg, None));
+                }
+                None => {
+                    let msg = format!("⚠️ No active TUMIX run found for session `{session_id}`.");
+                    self.add_to_history(history_cell::new_error_event(msg));
+                }
+            }
+            self.request_redraw();
+            return;
+        }
+
+        let cancelled = codex_tumix::cancel_all_runs();
+        if cancelled.is_empty() {
+            self.add_to_history(history_cell::new_info_event(
+                "ℹ️ There are no active TUMIX runs to stop.".to_string(),
+                None,
+            ));
+        } else {
+            let lines = cancelled
+                .iter()
+                .map(|run| {
+                    let short = run.run_id.chars().take(8).collect::<String>();
+                    format!("  • Session: {} (run {})", run.session_id, short)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let msg = format!(
+                "🛑 Requested cancellation for {} active TUMIX run(s):\n{}",
+                cancelled.len(),
+                lines
+            );
+            self.add_to_history(history_cell::new_info_event(msg, None));
+        }
+        self.request_redraw();
     }
 
     /// Forward file-search results to the bottom pane.

@@ -15,6 +15,7 @@ pub enum SlashCommand {
     New,
     Init,
     Tumix,
+    TumixStop,
     Compact,
     Undo,
     Diff,
@@ -34,6 +35,7 @@ impl SlashCommand {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
             SlashCommand::Tumix => "run TUMIX multi-agent parallel execution (Round 1)",
+            SlashCommand::TumixStop => "stop running TUMIX agents (optionally specify a session)",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Undo => "restore the workspace to the last Codex snapshot",
@@ -72,6 +74,7 @@ impl SlashCommand {
             | SlashCommand::Mention
             | SlashCommand::Status
             | SlashCommand::Mcp
+            | SlashCommand::TumixStop
             | SlashCommand::Quit => true,
 
             #[cfg(debug_assertions)]

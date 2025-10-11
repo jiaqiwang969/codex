@@ -914,8 +914,8 @@ impl ChatComposer {
 
                     self.textarea.set_text("");
 
-                    // Special case: /tumix can accept optional arguments
-                    if cmd == SlashCommand::Tumix && has_args {
+                    // Special cases: commands that accept optional arguments
+                    if matches!(cmd, SlashCommand::Tumix | SlashCommand::TumixStop) && has_args {
                         return (InputResult::CommandWithArgs(cmd, rest_str), true);
                     }
                     // Default: command without arguments

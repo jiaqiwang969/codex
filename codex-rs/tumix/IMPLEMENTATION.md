@@ -65,7 +65,7 @@ Session Tracker (saves results for Round 2+)
 
 ### `/tumix/src/worktree.rs`
 **Git worktree manager** - Provides filesystem isolation:
-- Creates worktrees based on main branch
+- Creates worktrees based on current branch (HEAD)
 - Manages cleanup of existing worktrees
 - Auto-commits with standardized messages
 - Detects and skips empty commits

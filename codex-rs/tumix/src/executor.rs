@@ -2,9 +2,13 @@
 
 use crate::worktree::AgentWorktree;
 use crate::{AgentConfig, AgentResult, SessionRecorder};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 /// Executes agents with resume-clone
 #[derive(Clone)]
@@ -25,6 +29,7 @@ impl AgentExecutor {
         worktree: &AgentWorktree,
         session_recorder: Arc<SessionRecorder>,
         run_id: &str,
+        cancel_token: CancellationToken,
     ) -> Result<AgentResult> {
         // 1. Build prompt
         let prompt = format!(
@@ -32,7 +37,7 @@ impl AgentExecutor {
 你的角色：{} - {}
 
 基于之前对话中用户的需求，请从你的专业角度实现解决方案。
-直接开始编写代码，完成后系统会自动提交。
+不做任何代码修改和编译操作，最终要求生成一份pdf问题解析报告，该报告通过xelatex编译，放到docs下面，完成后系统会自动提交。
 "#,
             config.name, config.role
         );
@@ -72,34 +77,60 @@ impl AgentExecutor {
             args.join(" ")
         );
 
-        let output = Command::new(&codex_bin)
+        let mut command = Command::new(&codex_bin);
+        command
             .args(args)
             .arg(&prompt)
             .current_dir(&worktree.path)
-            .output()
-            .await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command
+            .spawn()
             .context(format!("Failed to execute agent {}", config.id))?;
 
-        // Check execution status
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout_handle = spawn_reader(child.stdout.take());
+        let stderr_handle = spawn_reader(child.stderr.take());
+
+        let status = tokio::select! {
+            res = child.wait() => res.context("Failed to await codex exec status")?,
+            _ = cancel_token.cancelled() => {
+                tracing::info!("Cancelling agent {} run {}", config.id, run_id);
+                let _ = child.start_kill();
+                child
+                    .wait()
+                    .await
+                    .context("Failed to await cancelled codex exec status")?
+            }
+        };
+
+        let stdout = join_reader(stdout_handle).await;
+        let stderr = join_reader(stderr_handle).await;
+
+        if cancel_token.is_cancelled() {
+            tracing::warn!("Agent {} execution cancelled", config.id);
+            return Err(anyhow!("Agent {} execution cancelled", config.id));
+        }
+
+        if !status.success() {
             tracing::error!("Agent {} codex execution failed", config.id);
-            tracing::error!("  Exit code: {:?}", output.status.code());
-            tracing::error!(
-                "  Stderr: {}",
-                &stderr.chars().take(500).collect::<String>()
-            );
-            tracing::error!(
-                "  Stdout: {}",
-                &stdout.chars().take(200).collect::<String>()
-            );
+            tracing::error!("  Exit code: {:?}", status.code());
+            if let Some(err) = stderr.as_deref() {
+                tracing::error!("  Stderr: {}", err.chars().take(500).collect::<String>());
+            }
+            if let Some(out) = stdout.as_deref() {
+                tracing::error!("  Stdout: {}", out.chars().take(200).collect::<String>());
+            }
             anyhow::bail!(
                 "Agent {} execution failed with exit code {:?}:
 {}",
                 config.id,
-                output.status.code(),
-                &stderr.chars().take(300).collect::<String>()
+                status.code(),
+                stderr
+                    .unwrap_or_else(|| "execution cancelled or failed".to_string())
+                    .chars()
+                    .take(300)
+                    .collect::<String>(),
             );
         }
 
@@ -149,5 +180,37 @@ impl AgentExecutor {
             branch: worktree.branch.clone(),
             jsonl_path,
         })
+    }
+}
+
+fn spawn_reader<R>(reader: Option<R>) -> Option<JoinHandle<anyhow::Result<String>>>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    reader.map(|mut pipe| {
+        tokio::spawn(async move {
+            let mut buf = Vec::new();
+            pipe.read_to_end(&mut buf)
+                .await
+                .context("Failed to read process output")?;
+            Ok(String::from_utf8_lossy(&buf).into_owned())
+        })
+    })
+}
+
+async fn join_reader(handle: Option<JoinHandle<anyhow::Result<String>>>) -> Option<String> {
+    match handle {
+        Some(task) => match task.await {
+            Ok(Ok(data)) => Some(data),
+            Ok(Err(e)) => {
+                tracing::error!("Failed to read process output: {e:#}");
+                None
+            }
+            Err(e) => {
+                tracing::error!("Reader task panicked: {e:#}");
+                None
+            }
+        },
+        None => None,
     }
 }

@@ -5,7 +5,7 @@ TUMIX is an experimental orchestration layer that spins up 15 specialized Codex 
 ## Entry Points
 
 - **CLI**: `codex tumix <SESSION_ID>` resumes an existing Codex conversation and runs the agent swarm from the terminal. The command prints progress logs and a summary with branch names and commits when the run completes.
-- **TUI**: `/tumix <task>` launches the same workflow directly from the chat interface. The TUI automatically fetches the active session ID, displays a help card if no task is supplied, and streams status updates back into the transcript.
+- **TUI**: `/tumix <task>` launches the same workflow directly from the chat interface. The TUI automatically fetches the active session ID, displays a help card if no task is supplied, and streams status updates back into the transcript. Use `/tumix-stop` (optionally `/tumix-stop <SESSION_ID>`) to request cancellation of in-flight agent runs.
 
 Detailed usage guides live alongside the crate:
 

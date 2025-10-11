@@ -176,6 +176,7 @@ fn generate_with_git_graph<P: AsRef<Path>>(repo_path: P) -> Result<Vec<Line<'sta
     // For the embedded printer path, post-process the text column to dim the
     // commit hash (first token) and the author section (e.g., "<name>") so
     // the commit subject stands out.
+    #[allow(dead_code)]
     fn dim_hash_and_author(s: &str) -> String {
         // Insert dim (ESC[2m) at the first visible character (skipping any
         // leading ANSI), and end dim (ESC[22m) before the first following

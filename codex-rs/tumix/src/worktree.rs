@@ -38,7 +38,7 @@ impl WorktreeManager {
             self.remove_worktree(&worktree_path)?;
         }
 
-        // Create new worktree based on main branch
+        // Create new worktree based on current branch (HEAD)
         let repo_root = self
             .repo
             .path()
@@ -54,7 +54,7 @@ impl WorktreeManager {
         let output = Command::new("git")
             .args(["worktree", "add", "-b", &branch_name])
             .arg(&worktree_path)
-            .arg("main")
+            .arg("HEAD")
             .current_dir(repo_root)
             .output()
             .context("Failed to execute git worktree command")?;

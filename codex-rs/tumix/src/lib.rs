@@ -3,6 +3,7 @@
 //! TUMIX enables running 15 specialized agents in parallel, each working in isolated
 //! Git worktrees with cloned conversation contexts via `resume-clone`.
 
+mod control;
 pub mod executor;
 pub mod meta;
 pub mod worktree;
@@ -242,6 +243,9 @@ pub async fn run_tumix(
         &parent_session[..8]
     ));
 
+    let run_guard = control::register_run(&parent_session, &run_id)?;
+    let cancel_token = run_guard.token();
+
     report("🧠 Meta-agent分析任务，设计专家团队...".to_string());
     let agents = match meta::generate_agents(&parent_session, user_prompt).await {
         Ok(agents) => {
@@ -289,6 +293,7 @@ pub async fn run_tumix(
         let progress_clone = progress_arc.clone();
         let run_id_clone = run_id.clone();
         let session_recorder_task = session_recorder.clone();
+        let cancel_token_task = cancel_token.clone();
 
         join_set.spawn(async move {
             let report_task = |msg: String| {
@@ -312,8 +317,27 @@ pub async fn run_tumix(
             let recorder_for_exec = session_recorder_task.clone();
             let recorder_for_finalize = session_recorder_task.clone();
 
+            if cancel_token_task.is_cancelled() {
+                let err = anyhow::anyhow!("TUMIX run cancelled");
+                if let Err(rec_err) =
+                    recorder_for_finalize.record_failure(&agent_id, &format!("{err}"))
+                {
+                    report_task(format!(
+                        "  ⚠️ Failed to mark agent {} as cancelled: {}",
+                        agent_id, rec_err
+                    ));
+                }
+                return Err(err);
+            }
+
             let result = exec_clone
-                .execute(&agent, &worktree, recorder_for_exec, &run_id_clone)
+                .execute(
+                    &agent,
+                    &worktree,
+                    recorder_for_exec,
+                    &run_id_clone,
+                    cancel_token_task.clone(),
+                )
                 .await;
 
             match &result {
@@ -379,6 +403,10 @@ pub async fn run_tumix(
 
     report(format!("💾 Session列表已保存: {}", sessions_path.display()));
 
+    if cancel_token.is_cancelled() {
+        anyhow::bail!("TUMIX run cancelled");
+    }
+
     if results.is_empty() && !errors.is_empty() {
         anyhow::bail!(
             "所有agents执行失败。错误:
@@ -391,6 +419,29 @@ pub async fn run_tumix(
     }
 
     Ok(Round1Result { agents: results })
+}
+
+#[derive(Debug, Clone)]
+pub struct CancelledRun {
+    pub session_id: String,
+    pub run_id: String,
+}
+
+pub fn cancel_all_runs() -> Vec<CancelledRun> {
+    control::cancel_all()
+        .into_iter()
+        .map(|desc| CancelledRun {
+            session_id: desc.session_id,
+            run_id: desc.run_id,
+        })
+        .collect()
+}
+
+pub fn cancel_run(session_id: &str) -> Option<CancelledRun> {
+    control::cancel_session(session_id).map(|desc| CancelledRun {
+        session_id: desc.session_id,
+        run_id: desc.run_id,
+    })
 }
 
 #[cfg(test)]

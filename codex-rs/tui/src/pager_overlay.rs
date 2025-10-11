@@ -33,10 +33,12 @@ impl Overlay {
         Self::new_static_with_title(lines, title)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_static_with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
         Self::Static(StaticOverlay::with_title_no_wrap(lines, title))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_static_with_title_no_wrap_and_path(
         lines: Vec<Line<'static>>,
         title: String,
@@ -968,8 +970,8 @@ impl PagerView {
             let mut dcol: i32 = 0;
             let pref = |c: Option<char>| c.unwrap_or(' ');
             let c0 = pref(cand_0);
-            let cL = pref(cand_m1);
-            let cR = pref(cand_p1);
+            let c_l = pref(cand_m1);
+            let c_r = pref(cand_p1);
             // Primary rules by glyph; otherwise evaluate candidates by lookahead scoring
             let mut ambiguous = false;
             match c0 {
@@ -985,14 +987,14 @@ impl PagerView {
                 if dcol == 0 {
                     // still ambiguous: use adjacent hints
                     if dir > 0 {
-                        if cR == '╱' {
+                        if c_r == '╱' {
                             dcol = 1;
-                        } else if cL == '╲' {
+                        } else if c_l == '╲' {
                             dcol = -1;
                         }
-                    } else if cL == '╱' {
+                    } else if c_l == '╱' {
                         dcol = -1;
-                    } else if cR == '╲' {
+                    } else if c_r == '╲' {
                         dcol = 1;
                     }
                 }
@@ -1466,12 +1468,12 @@ impl TranscriptOverlay {
                 lines.push(Line::from(""));
             }
             let cell_lines = if Some(idx) == highlight_cell {
-                cell.transcript_lines()
+                cell.transcript_lines(u16::MAX)
                     .into_iter()
                     .map(Stylize::reversed)
                     .collect()
             } else {
-                cell.transcript_lines()
+                cell.transcript_lines(u16::MAX)
             };
             lines.extend(cell_lines);
             texts.push(Text::from(lines));
@@ -1487,7 +1489,7 @@ impl TranscriptOverlay {
         if !cell.is_stream_continuation() && !self.cells.is_empty() {
             lines.push(Line::from(""));
         }
-        lines.extend(cell.transcript_lines());
+        lines.extend(cell.transcript_lines(u16::MAX));
         self.view.texts.push(Text::from(lines));
         self.cells.push(cell);
         self.view.wrap_cache = None;
@@ -1596,6 +1598,7 @@ impl StaticOverlay {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_title_no_wrap(lines: Vec<Line<'static>>, title: String) -> Self {
         let mut s = Self {
             view: PagerView::new(vec![Text::from(lines)], title, 0),
@@ -1610,10 +1613,11 @@ impl StaticOverlay {
         s
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_title_no_wrap_and_path(
         lines: Vec<Line<'static>>,
         title: String,
-        repo_path: String,
+        _repo_path: String,
     ) -> Self {
         let mut s = Self {
             view: PagerView::new(vec![Text::from(lines)], title, 0),
@@ -1822,7 +1826,7 @@ mod tests {
             self.lines.clone()
         }
 
-        fn transcript_lines(&self) -> Vec<Line<'static>> {
+        fn transcript_lines(&self, _width: u16) -> Vec<Line<'static>> {
             self.lines.clone()
         }
     }
