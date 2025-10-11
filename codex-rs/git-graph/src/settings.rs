@@ -13,8 +13,10 @@
 //!   * [MergePatterns] Regex that extract branch names from a merge commit.
 
 use crate::print::format::CommitFormat;
-use regex::{Error, Regex};
-use serde_derive::{Deserialize, Serialize};
+use regex::Error;
+use regex::Regex;
+use serde_derive::Deserialize;
+use serde_derive::Serialize;
 use std::str::FromStr;
 
 /// Repository settings for the branching model.

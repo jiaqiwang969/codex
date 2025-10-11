@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::{io::Write, path::PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 
 use codex_core::find_conversation_path_by_id_str;
 use tempfile::TempDir;

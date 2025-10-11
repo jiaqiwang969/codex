@@ -1,13 +1,16 @@
 //! Turn-scoped state and active turn metadata scaffolding.
 
 use indexmap::IndexMap;
-use std::{collections::HashMap, sync::Arc};
-use tokio::{sync::Mutex, task::AbortHandle};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
 
 use codex_protocol::models::ResponseInputItem;
 use tokio::sync::oneshot;
 
-use crate::{protocol::ReviewDecision, tasks::SessionTask};
+use crate::protocol::ReviewDecision;
+use crate::tasks::SessionTask;
 
 /// Metadata about the currently running turn.
 pub(crate) struct ActiveTurn {

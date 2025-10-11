@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
-use codex_protocol::{
-    models::{ContentItem, ResponseItem},
-    protocol::{USER_INSTRUCTIONS_CLOSE_TAG, USER_INSTRUCTIONS_OPEN_TAG},
-};
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::USER_INSTRUCTIONS_CLOSE_TAG;
+use codex_protocol::protocol::USER_INSTRUCTIONS_OPEN_TAG;
 
 /// Wraps user instructions in a tag so the model can classify them easily.
 

@@ -1,18 +1,28 @@
-use std::{
-    io::Result,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::io::Result;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
-use crate::{history_cell::HistoryCell, render::line_utils::push_owned_lines, tui, tui::TuiEvent};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Style, Styled, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Clear, Paragraph, Widget, WidgetRef},
-};
+use crate::history_cell::HistoryCell;
+use crate::render::line_utils::push_owned_lines;
+use crate::tui;
+use crate::tui::TuiEvent;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Styled;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Span;
+use ratatui::text::Text;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Widget;
+use ratatui::widgets::WidgetRef;
 
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
@@ -67,7 +77,8 @@ impl Overlay {
         renderables: Vec<Box<dyn crate::render::renderable::Renderable>>,
         title: String,
     ) -> Self {
-        use ratatui::{buffer::Buffer, layout::Rect};
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
 
         // Render each renderable to a temporary buffer and extract lines
         let mut all_lines: Vec<Line<'static>> = Vec::new();
@@ -1806,15 +1817,18 @@ impl StaticOverlay {
 mod tests {
     use super::*;
     use insta::assert_snapshot;
-    use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    use crate::{
-        exec_cell::CommandOutput,
-        history_cell::{HistoryCell, new_patch_event},
-    };
+    use crate::exec_cell::CommandOutput;
+    use crate::history_cell::HistoryCell;
+    use crate::history_cell::new_patch_event;
     use codex_core::protocol::FileChange;
     use codex_protocol::parse_command::ParsedCommand;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     #[derive(Debug)]
     struct TestCell {

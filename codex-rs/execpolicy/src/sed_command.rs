@@ -1,4 +1,5 @@
-use crate::error::{Error, Result};
+use crate::error::Error;
+use crate::error::Result;
 
 pub fn parse_sed_command(sed_command: &str) -> Result<()> {
     // For now, we parse only commands like `122,202p`.

@@ -1,5 +1,6 @@
 use serde::Serialize;
-use tracing::{error, warn};
+use tracing::error;
+use tracing::warn;
 
 #[derive(Debug, Default)]
 pub(crate) struct UserNotifier {

@@ -1,8 +1,10 @@
 //! Git worktree management for isolated agent execution
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use git2::Repository;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Manages Git worktrees for agent isolation

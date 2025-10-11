@@ -1,15 +1,14 @@
 //! Readiness flag with token-based authorization and async waiting (Tokio).
 
-use std::{
-    collections::HashSet,
-    sync::atomic::{AtomicBool, AtomicI32, Ordering},
-    time::Duration,
-};
+use std::collections::HashSet;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-use tokio::{
-    sync::{Mutex, watch},
-    time,
-};
+use tokio::sync::Mutex;
+use tokio::sync::watch;
+use tokio::time;
 
 /// Opaque subscription token returned by `subscribe()`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

@@ -1,10 +1,15 @@
-use crate::protocol::{
-    AgentMessageEvent, AgentReasoningEvent, AgentReasoningRawContentEvent, EventMsg,
-    InputMessageKind, UserMessageEvent, WebSearchEndEvent,
-};
-use codex_protocol::models::{
-    ContentItem, ReasoningItemContent, ReasoningItemReasoningSummary, ResponseItem, WebSearchAction,
-};
+use crate::protocol::AgentMessageEvent;
+use crate::protocol::AgentReasoningEvent;
+use crate::protocol::AgentReasoningRawContentEvent;
+use crate::protocol::EventMsg;
+use crate::protocol::InputMessageKind;
+use crate::protocol::UserMessageEvent;
+use crate::protocol::WebSearchEndEvent;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::models::WebSearchAction;
 
 /// Convert a `ResponseItem` into zero or more `EventMsg` values that the UI can render.
 ///

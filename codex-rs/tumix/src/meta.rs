@@ -1,7 +1,8 @@
 //! Meta-agent that generates specialized agent configurations based on task complexity
 
 use crate::AgentConfig;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use tokio::process::Command;
 
 /// Generate agent configurations via meta-agent (flexible count based on task)

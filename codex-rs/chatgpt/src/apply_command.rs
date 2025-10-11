@@ -2,12 +2,14 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use codex_common::CliConfigOverrides;
-use codex_core::config::{Config, ConfigOverrides};
+use codex_core::config::Config;
+use codex_core::config::ConfigOverrides;
 
-use crate::{
-    chatgpt_token::init_chatgpt_token_from_auth,
-    get_task::{GetTaskResponse, OutputItem, PrOutputItem, get_task},
-};
+use crate::chatgpt_token::init_chatgpt_token_from_auth;
+use crate::get_task::GetTaskResponse;
+use crate::get_task::OutputItem;
+use crate::get_task::PrOutputItem;
+use crate::get_task::get_task;
 
 /// Applies the latest diff from a Codex agent task.
 #[derive(Debug, Parser)]

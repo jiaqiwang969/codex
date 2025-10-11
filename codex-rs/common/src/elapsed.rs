@@ -1,4 +1,5 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 
 /// Returns a string representing the elapsed time since `start_time` like
 /// "1m 15s" or "1.50s".

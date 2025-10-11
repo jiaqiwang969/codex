@@ -1,18 +1,21 @@
 use std::time::Duration;
 
-use codex_core::{
-    ModelProviderInfo, WireApi,
-    protocol::{EventMsg, InputItem, Op},
-};
-use core_test_support::{
-    load_sse_fixture_with_id, skip_if_no_network,
-    test_codex::{TestCodex, test_codex},
-    wait_for_event_with_timeout,
-};
-use wiremock::{
-    Mock, MockServer, ResponseTemplate,
-    matchers::{body_string_contains, method, path},
-};
+use codex_core::ModelProviderInfo;
+use codex_core::WireApi;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::InputItem;
+use codex_core::protocol::Op;
+use core_test_support::load_sse_fixture_with_id;
+use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::test_codex;
+use core_test_support::wait_for_event_with_timeout;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::body_string_contains;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 fn sse_completed(id: &str) -> String {
     load_sse_fixture_with_id("tests/fixtures/completed_template.json", id)

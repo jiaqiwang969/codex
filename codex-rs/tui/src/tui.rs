@@ -1,39 +1,44 @@
+use std::io::IsTerminal;
+use std::io::Result;
+use std::io::Stdout;
+use std::io::stdout;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 #[cfg(unix)]
 use std::sync::atomic::AtomicU8;
 #[cfg(unix)]
 use std::sync::atomic::AtomicU16;
-use std::{
-    io::{IsTerminal, Result, Stdout, stdout},
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::{Duration, Instant},
-};
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
 
+use crossterm::Command;
+use crossterm::SynchronizedUpdate;
 #[cfg(unix)]
 use crossterm::cursor::MoveTo;
-use crossterm::{
-    Command, SynchronizedUpdate,
-    event::{
-        DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange, Event,
-        KeyEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
-    },
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, supports_keyboard_enhancement},
-};
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    crossterm::{
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode},
-    },
-    layout::Offset,
-    text::Line,
-};
+use crossterm::event::DisableBracketedPaste;
+use crossterm::event::DisableFocusChange;
+use crossterm::event::EnableBracketedPaste;
+use crossterm::event::EnableFocusChange;
+use crossterm::event::Event;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyboardEnhancementFlags;
+use crossterm::event::PopKeyboardEnhancementFlags;
+use crossterm::event::PushKeyboardEnhancementFlags;
+use crossterm::terminal::EnterAlternateScreen;
+use crossterm::terminal::LeaveAlternateScreen;
+use crossterm::terminal::supports_keyboard_enhancement;
+use ratatui::backend::Backend;
+use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::disable_raw_mode;
+use ratatui::crossterm::terminal::enable_raw_mode;
+use ratatui::layout::Offset;
+use ratatui::text::Line;
 
-use crate::{custom_terminal, custom_terminal::Terminal as CustomTerminal};
+use crate::custom_terminal;
+use crate::custom_terminal::Terminal as CustomTerminal;
 use tokio::select;
 use tokio_stream::Stream;
 
@@ -229,10 +234,9 @@ impl Tui {
         // Spawn background scheduler to coalesce frame requests and emit draws at deadlines.
         let draw_tx_clone = draw_tx.clone();
         tokio::spawn(async move {
-            use tokio::{
-                select,
-                time::{Instant as TokioInstant, sleep_until},
-            };
+            use tokio::select;
+            use tokio::time::Instant as TokioInstant;
+            use tokio::time::sleep_until;
 
             let mut rx = frame_schedule_rx;
             let mut next_deadline: Option<Instant> = None;

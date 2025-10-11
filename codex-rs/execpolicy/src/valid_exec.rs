@@ -1,4 +1,5 @@
-use crate::{arg_type::ArgType, error::Result};
+use crate::arg_type::ArgType;
+use crate::error::Result;
 use serde::Serialize;
 
 /// exec() invocation that has been accepted by a `Policy`.

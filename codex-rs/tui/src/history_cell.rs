@@ -951,10 +951,11 @@ impl HistoryCell for InfoHistoryCell {
         }
 
         if let Some(hint) = &self.hint
-            && let Some(first_line) = lines.first_mut() {
-                first_line.spans.push(" ".into());
-                first_line.spans.push(hint.clone().dark_gray());
-            }
+            && let Some(first_line) = lines.first_mut()
+        {
+            first_line.spans.push(" ".into());
+            first_line.spans.push(hint.clone().dark_gray());
+        }
 
         lines
     }

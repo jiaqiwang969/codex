@@ -1,16 +1,14 @@
 #![allow(clippy::needless_lifetimes)]
 
-use crate::{
-    error::{Error, Result},
-    sed_command::parse_sed_command,
-};
+use crate::error::Error;
+use crate::error::Result;
+use crate::sed_command::parse_sed_command;
 use allocative::Allocative;
 use derive_more::derive::Display;
 use serde::Serialize;
-use starlark::{
-    any::ProvidesStaticType,
-    values::{StarlarkValue, starlark_value},
-};
+use starlark::any::ProvidesStaticType;
+use starlark::values::StarlarkValue;
+use starlark::values::starlark_value;
 
 #[derive(Debug, Clone, Display, Eq, PartialEq, ProvidesStaticType, Allocative, Serialize)]
 #[display("{}", self)]

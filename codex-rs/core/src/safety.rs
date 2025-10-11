@@ -1,18 +1,17 @@
-use std::{
-    collections::HashSet,
-    path::{Component, Path, PathBuf},
-};
+use std::collections::HashSet;
+use std::path::Component;
+use std::path::Path;
+use std::path::PathBuf;
 
-use codex_apply_patch::{ApplyPatchAction, ApplyPatchFileChange};
+use codex_apply_patch::ApplyPatchAction;
+use codex_apply_patch::ApplyPatchFileChange;
 
 use crate::exec::SandboxType;
 
-use crate::{
-    command_safety::{
-        is_dangerous_command::command_might_be_dangerous, is_safe_command::is_known_safe_command,
-    },
-    protocol::{AskForApproval, SandboxPolicy},
-};
+use crate::command_safety::is_dangerous_command::command_might_be_dangerous;
+use crate::command_safety::is_safe_command::is_known_safe_command;
+use crate::protocol::AskForApproval;
+use crate::protocol::SandboxPolicy;
 
 #[derive(Debug, PartialEq)]
 pub enum SafetyCheck {

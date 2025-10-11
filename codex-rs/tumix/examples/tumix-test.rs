@@ -1,6 +1,7 @@
 //! Simple test binary for TUMIX
 
-use codex_tumix::{self, ProgressCallback};
+use codex_tumix::ProgressCallback;
+use codex_tumix::{self};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

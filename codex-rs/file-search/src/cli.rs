@@ -1,6 +1,8 @@
-use std::{num::NonZero, path::PathBuf};
+use std::num::NonZero;
+use std::path::PathBuf;
 
-use clap::{ArgAction, Parser};
+use clap::ArgAction;
+use clap::Parser;
 
 /// Fuzzy matches filenames under a directory.
 #[derive(Parser)]

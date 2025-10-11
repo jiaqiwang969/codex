@@ -1,4 +1,5 @@
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
+use ratatui::text::Span;
 use std::ops::Range;
 use textwrap::Options;
 use textwrap::wrap_algorithms::Penalties;
@@ -331,7 +332,8 @@ mod tests {
     use super::*;
     use itertools::Itertools as _;
     use pretty_assertions::assert_eq;
-    use ratatui::style::{Color, Stylize};
+    use ratatui::style::Color;
+    use ratatui::style::Stylize;
     use std::string::ToString;
 
     fn concat_line(line: &Line) -> String {

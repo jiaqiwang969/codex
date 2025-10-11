@@ -1,6 +1,9 @@
-use crate::bash::{try_parse_bash, try_parse_word_only_commands_sequence};
-use serde::{Deserialize, Serialize};
-use shlex::{split as shlex_split, try_join as shlex_try_join};
+use crate::bash::try_parse_bash;
+use crate::bash::try_parse_word_only_commands_sequence;
+use serde::Deserialize;
+use serde::Serialize;
+use shlex::split as shlex_split;
+use shlex::try_join as shlex_try_join;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum ParsedCommand {

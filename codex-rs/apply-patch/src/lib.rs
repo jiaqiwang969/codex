@@ -2,19 +2,26 @@ mod parser;
 mod seek_sequence;
 mod standalone_executable;
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    str::Utf8Error,
-    sync::LazyLock,
-};
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str::Utf8Error;
+use std::sync::LazyLock;
 
-use anyhow::{Context, Result};
-pub use parser::{Hunk, ParseError, parse_patch};
-use parser::{ParseError::*, UpdateFileChunk};
+use anyhow::Context;
+use anyhow::Result;
+pub use parser::Hunk;
+pub use parser::ParseError;
+use parser::ParseError::*;
+use parser::UpdateFileChunk;
+pub use parser::parse_patch;
 use similar::TextDiff;
 use thiserror::Error;
-use tree_sitter::{LanguageError, Parser, Query, QueryCursor, StreamingIterator};
+use tree_sitter::LanguageError;
+use tree_sitter::Parser;
+use tree_sitter::Query;
+use tree_sitter::QueryCursor;
+use tree_sitter::StreamingIterator;
 use tree_sitter_bash::LANGUAGE as BASH;
 
 pub use standalone_executable::main;
@@ -838,7 +845,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
-    use std::{fs, string::ToString};
+    use std::fs;
+    use std::string::ToString;
     use tempfile::tempdir;
 
     /// Helper to construct a patch with the given body.

@@ -1,5 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 /// Truncate a tool result to fit within the given height and width. If the text is valid JSON, we format it in a compact way before truncating.
 /// This is a best-effort approach that may not work perfectly for text where 1 grapheme is rendered as multiple terminal cells.

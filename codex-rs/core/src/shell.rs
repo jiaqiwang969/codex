@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use shlex;
 use std::path::PathBuf;
 
@@ -136,7 +137,8 @@ fn strip_bash_lc(command: &[String]) -> Option<String> {
 
 #[cfg(unix)]
 fn detect_default_user_shell() -> Shell {
-    use libc::{getpwuid, getuid};
+    use libc::getpwuid;
+    use libc::getuid;
     use std::ffi::CStr;
 
     unsafe {
@@ -221,7 +223,8 @@ pub async fn default_user_shell() -> Shell {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use std::{process::Command, string::ToString};
+    use std::process::Command;
+    use std::string::ToString;
 
     #[tokio::test]
     async fn test_current_shell_detects_zsh() {
@@ -302,10 +305,10 @@ mod tests {
         for (input, expected_cmd, expected_output) in cases {
             use std::collections::HashMap;
 
-            use crate::{
-                exec::{ExecParams, SandboxType, process_exec_tool_call},
-                protocol::SandboxPolicy,
-            };
+            use crate::exec::ExecParams;
+            use crate::exec::SandboxType;
+            use crate::exec::process_exec_tool_call;
+            use crate::protocol::SandboxPolicy;
 
             let temp_home = tempfile::tempdir().unwrap();
             let bashrc_path = temp_home.path().join(".bashrc");
@@ -406,12 +409,13 @@ mod macos_tests {
             ),
         ];
         for (input, expected_cmd, expected_output) in cases {
-            use std::{collections::HashMap, path::PathBuf};
+            use std::collections::HashMap;
+            use std::path::PathBuf;
 
-            use crate::{
-                exec::{ExecParams, SandboxType, process_exec_tool_call},
-                protocol::SandboxPolicy,
-            };
+            use crate::exec::ExecParams;
+            use crate::exec::SandboxType;
+            use crate::exec::process_exec_tool_call;
+            use crate::protocol::SandboxPolicy;
 
             // create a temp directory with a zshrc file in it
             let temp_home = tempfile::tempdir().unwrap();

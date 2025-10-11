@@ -16,11 +16,12 @@ use codex_ansi_escape::ansi_escape_line;
 use codex_common::elapsed::format_duration;
 use codex_protocol::parse_command::ParsedCommand;
 use itertools::Itertools;
-use ratatui::{
-    prelude::*,
-    style::{Modifier, Stylize},
-    widgets::{Paragraph, WidgetRef, Wrap},
-};
+use ratatui::prelude::*;
+use ratatui::style::Modifier;
+use ratatui::style::Stylize;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::WidgetRef;
+use ratatui::widgets::Wrap;
 use textwrap::WordSplitter;
 use unicode_width::UnicodeWidthStr;
 

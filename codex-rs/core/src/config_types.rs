@@ -4,10 +4,14 @@
 // definitions that do not contain business logic.
 
 use serde::Deserializer;
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Duration;
 use wildmatch::WildMatchPattern;
 
-use serde::{Deserialize, Serialize, de::Error as SerdeError};
+use serde::Deserialize;
+use serde::Serialize;
+use serde::de::Error as SerdeError;
 
 pub const DEFAULT_OTEL_ENVIRONMENT: &str = "dev";
 
@@ -150,7 +154,9 @@ pub enum McpServerTransportConfig {
 }
 
 mod option_duration_secs {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::Deserialize;
+    use serde::Deserializer;
+    use serde::Serializer;
     use std::time::Duration;
 
     pub fn serialize<S>(value: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
@@ -292,7 +298,7 @@ pub enum Notifications {
 
 impl Default for Notifications {
     fn default() -> Self {
-        Self::Enabled(false)
+        Self::Enabled(true)
     }
 }
 

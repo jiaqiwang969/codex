@@ -16,7 +16,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
-use crate::onboarding::onboarding_screen::{KeyboardHandler, StepStateProvider};
+use crate::onboarding::onboarding_screen::KeyboardHandler;
+use crate::onboarding::onboarding_screen::StepStateProvider;
 
 use super::onboarding_screen::StepState;
 

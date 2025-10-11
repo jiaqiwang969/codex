@@ -1,8 +1,11 @@
 use crate::chatwidget::get_limits_duration;
 
 use super::helpers::format_reset_timestamp;
-use chrono::{DateTime, Duration as ChronoDuration, Local};
-use codex_core::protocol::{RateLimitSnapshot, RateLimitWindow};
+use chrono::DateTime;
+use chrono::Duration as ChronoDuration;
+use chrono::Local;
+use codex_core::protocol::RateLimitSnapshot;
+use codex_core::protocol::RateLimitWindow;
 use std::convert::TryFrom;
 
 const STATUS_LIMIT_BAR_SEGMENTS: usize = 20;

@@ -1,12 +1,15 @@
-use codex_core::{AuthManager, config::Config, git_info::get_git_repo_root};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    prelude::Widget,
-    style::Color,
-    widgets::{Clear, WidgetRef},
-};
+use codex_core::AuthManager;
+use codex_core::config::Config;
+use codex_core::git_info::get_git_repo_root;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::prelude::Widget;
+use ratatui::style::Color;
+use ratatui::widgets::Clear;
+use ratatui::widgets::WidgetRef;
 
 use codex_app_server_protocol::AuthMode;
 
@@ -21,7 +24,8 @@ use crate::tui::FrameRequester;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use color_eyre::eyre::Result;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use std::sync::RwLock;
 
 #[allow(clippy::large_enum_variant)]
 enum Step {

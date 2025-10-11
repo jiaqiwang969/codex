@@ -1,19 +1,24 @@
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-use std::{
-    collections::{HashMap, VecDeque},
-    io::{ErrorKind, Read},
-    sync::{
-        Arc, Mutex as StdMutex,
-        atomic::{AtomicBool, AtomicI32, Ordering},
-    },
-};
-use tokio::{
-    sync::{Mutex, Notify, mpsc},
-    task::JoinHandle,
-    time::{Duration, Instant},
-};
+use portable_pty::CommandBuilder;
+use portable_pty::PtySize;
+use portable_pty::native_pty_system;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::io::ErrorKind;
+use std::io::Read;
+use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::Ordering;
+use tokio::sync::Mutex;
+use tokio::sync::Notify;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
+use tokio::time::Instant;
 
-use crate::{exec_command::ExecCommandSession, truncate::truncate_middle};
+use crate::exec_command::ExecCommandSession;
+use crate::truncate::truncate_middle;
 
 mod errors;
 

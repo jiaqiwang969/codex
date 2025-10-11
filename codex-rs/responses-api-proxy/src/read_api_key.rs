@@ -163,7 +163,10 @@ where
 
 #[cfg(unix)]
 fn mlock_str(value: &str) {
-    use libc::{_SC_PAGESIZE, c_void, mlock, sysconf};
+    use libc::_SC_PAGESIZE;
+    use libc::c_void;
+    use libc::mlock;
+    use libc::sysconf;
 
     if value.is_empty() {
         return;

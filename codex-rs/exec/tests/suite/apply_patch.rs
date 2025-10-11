@@ -3,11 +3,14 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
 use codex_core::CODEX_APPLY_PATCH_ARG1;
-use core_test_support::responses::{
-    ev_apply_patch_custom_tool_call, ev_apply_patch_function_call, ev_completed,
-    mount_sse_sequence, sse, start_mock_server,
-};
-use std::{fs, process::Command};
+use core_test_support::responses::ev_apply_patch_custom_tool_call;
+use core_test_support::responses::ev_apply_patch_function_call;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse;
+use core_test_support::responses::start_mock_server;
+use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 
 /// While we may add an `apply-patch` subcommand to the `codex` CLI multitool
@@ -46,7 +49,8 @@ fn test_standalone_exec_cli_can_use_apply_patch() -> anyhow::Result<()> {
 #[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_apply_patch_tool() -> anyhow::Result<()> {
-    use core_test_support::{skip_if_no_network, test_codex_exec::test_codex_exec};
+    use core_test_support::skip_if_no_network;
+    use core_test_support::test_codex_exec::test_codex_exec;
 
     skip_if_no_network!(Ok(()));
 
@@ -94,7 +98,8 @@ async fn test_apply_patch_tool() -> anyhow::Result<()> {
 #[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_apply_patch_freeform_tool() -> anyhow::Result<()> {
-    use core_test_support::{skip_if_no_network, test_codex_exec::test_codex_exec};
+    use core_test_support::skip_if_no_network;
+    use core_test_support::test_codex_exec::test_codex_exec;
 
     skip_if_no_network!(Ok(()));
 

@@ -1,5 +1,6 @@
 use base64::Engine;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default)]

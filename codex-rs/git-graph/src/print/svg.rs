@@ -3,7 +3,9 @@
 use crate::graph::GitGraph;
 use crate::settings::Settings;
 use svg::node::element::path::Data;
-use svg::node::element::{Circle, Line, Path};
+use svg::node::element::Circle;
+use svg::node::element::Line;
+use svg::node::element::Path;
 use svg::Document;
 
 /// Creates a SVG visual representation of a graph.

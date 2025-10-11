@@ -1,6 +1,8 @@
 use std::sync::OnceLock;
 
-use icu_decimal::{DecimalFormatter, input::Decimal, options::DecimalFormatterOptions};
+use icu_decimal::DecimalFormatter;
+use icu_decimal::input::Decimal;
+use icu_decimal::options::DecimalFormatterOptions;
 use icu_locale_core::Locale;
 
 fn make_local_formatter() -> Option<DecimalFormatter> {

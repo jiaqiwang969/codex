@@ -5,7 +5,9 @@
 // ```shell
 // ./generate_mcp_types.py
 // ```
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::Deserialize;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::convert::TryFrom;
 
 use ts_rs::TS;

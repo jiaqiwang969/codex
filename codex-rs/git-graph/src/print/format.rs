@@ -1,7 +1,10 @@
 //! Formatting of commits.
 
-use chrono::{FixedOffset, Local, TimeZone};
-use git2::{Commit, Time};
+use chrono::FixedOffset;
+use chrono::Local;
+use chrono::TimeZone;
+use git2::Commit;
+use git2::Time;
 use lazy_static::lazy_static;
 use std::fmt::Write;
 use std::str::FromStr;

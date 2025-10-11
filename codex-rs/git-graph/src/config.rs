@@ -6,10 +6,12 @@
 //! The [branching models][BranchSettingsDef] themselves are defined in
 //! module [settings][super::settings]
 
-use crate::settings::{BranchSettingsDef, RepoSettings};
+use crate::settings::BranchSettingsDef;
+use crate::settings::RepoSettings;
 use git2::Repository;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Creates the directory `APP_DATA/git-graph/models` if it does not exist,
 /// and writes the files for built-in branching models there.

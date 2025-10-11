@@ -1531,9 +1531,26 @@ impl ChatWidget {
         if !notification.allowed_for(&self.config.tui_notifications) {
             return;
         }
+        self.maybe_play_completion_sound(&notification);
         self.pending_notification = Some(notification);
         self.request_redraw();
     }
+
+    #[cfg(target_os = "macos")]
+    fn maybe_play_completion_sound(&self, notification: &Notification) {
+        if !matches!(notification, Notification::AgentTurnComplete { .. }) {
+            return;
+        }
+        if let Err(error) = std::process::Command::new("afplay")
+            .arg("/System/Library/Sounds/Glass.aiff")
+            .spawn()
+        {
+            debug!(error = %error, "failed to play completion sound");
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn maybe_play_completion_sound(&self, _notification: &Notification) {}
 
     pub(crate) fn maybe_post_pending_notification(&mut self, tui: &mut crate::tui::Tui) {
         if let Some(notif) = self.pending_notification.take() {

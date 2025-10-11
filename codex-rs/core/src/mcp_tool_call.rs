@@ -2,11 +2,14 @@ use std::time::Instant;
 
 use tracing::error;
 
-use crate::{
-    codex::Session,
-    protocol::{Event, EventMsg, McpInvocation, McpToolCallBeginEvent, McpToolCallEndEvent},
-};
-use codex_protocol::models::{FunctionCallOutputPayload, ResponseInputItem};
+use crate::codex::Session;
+use crate::protocol::Event;
+use crate::protocol::EventMsg;
+use crate::protocol::McpInvocation;
+use crate::protocol::McpToolCallBeginEvent;
+use crate::protocol::McpToolCallEndEvent;
+use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::ResponseInputItem;
 
 /// Handles the specified tool call dispatches the appropriate
 /// `McpToolCallBegin` and `McpToolCallEnd` events to the `Session`.

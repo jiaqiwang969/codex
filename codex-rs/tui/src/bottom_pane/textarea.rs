@@ -1,14 +1,15 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Style},
-    widgets::{StatefulWidgetRef, WidgetRef},
-};
-use std::{
-    cell::{Ref, RefCell},
-    ops::Range,
-};
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::widgets::StatefulWidgetRef;
+use ratatui::widgets::WidgetRef;
+use std::cell::Ref;
+use std::cell::RefCell;
+use std::ops::Range;
 use textwrap::Options;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;

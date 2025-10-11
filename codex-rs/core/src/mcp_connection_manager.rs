@@ -13,18 +13,25 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::anyhow;
 use codex_mcp_client::McpClient;
 use codex_rmcp_client::OAuthCredentialsStoreMode;
 use codex_rmcp_client::RmcpClient;
-use mcp_types::{ClientCapabilities, Implementation, Tool};
+use mcp_types::ClientCapabilities;
+use mcp_types::Implementation;
+use mcp_types::Tool;
 
 use serde_json::json;
-use sha1::{Digest, Sha1};
+use sha1::Digest;
+use sha1::Sha1;
 use tokio::task::JoinSet;
-use tracing::{info, warn};
+use tracing::info;
+use tracing::warn;
 
-use crate::config_types::{McpServerConfig, McpServerTransportConfig};
+use crate::config_types::McpServerConfig;
+use crate::config_types::McpServerTransportConfig;
 
 /// Delimiter used to separate the server name from the tool name in a fully
 /// qualified tool name.

@@ -1,5 +1,6 @@
 use assert_cmd::prelude::*;
-use std::{fs, process::Command};
+use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 
 #[test]

@@ -1,17 +1,18 @@
-use std::{
-    borrow::Cow,
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::borrow::Cow;
+use std::ffi::OsString;
+use std::path::Path;
+use std::path::PathBuf;
 
-use crate::{
-    ArgType,
-    Error::{
-        CannotCanonicalizePath, CannotCheckRelativePath, ReadablePathNotInReadableFolders,
-        WriteablePathNotInWriteableFolders,
-    },
-    ExecCall, MatchedExec, Policy, Result, ValidExec,
-};
+use crate::ArgType;
+use crate::Error::CannotCanonicalizePath;
+use crate::Error::CannotCheckRelativePath;
+use crate::Error::ReadablePathNotInReadableFolders;
+use crate::Error::WriteablePathNotInWriteableFolders;
+use crate::ExecCall;
+use crate::MatchedExec;
+use crate::Policy;
+use crate::Result;
+use crate::ValidExec;
 use path_absolutize::*;
 
 macro_rules! check_file_in_folders {
@@ -143,8 +144,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::{MatchedArg, PolicyParser};
-    use anyhow::{Result, anyhow};
+    use crate::MatchedArg;
+    use crate::PolicyParser;
+    use anyhow::Result;
+    use anyhow::anyhow;
 
     fn setup(fake_cp: &Path) -> ExecvChecker {
         let source = format!(

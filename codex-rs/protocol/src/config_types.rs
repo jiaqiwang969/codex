@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
-use strum_macros::{Display, EnumIter};
+use serde::Deserialize;
+use serde::Serialize;
+use strum_macros::Display;
+use strum_macros::EnumIter;
 use ts_rs::TS;
 
 /// See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning

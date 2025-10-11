@@ -10,14 +10,17 @@
 //! program. The utility connects, issues a `tools/list` request and prints the
 //! server's response as pretty JSON.
 
-use std::{ffi::OsString, time::Duration};
+use std::ffi::OsString;
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use codex_mcp_client::McpClient;
-use mcp_types::{
-    ClientCapabilities, Implementation, InitializeRequestParams, ListToolsRequestParams,
-    MCP_SCHEMA_VERSION,
-};
+use mcp_types::ClientCapabilities;
+use mcp_types::Implementation;
+use mcp_types::InitializeRequestParams;
+use mcp_types::ListToolsRequestParams;
+use mcp_types::MCP_SCHEMA_VERSION;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]

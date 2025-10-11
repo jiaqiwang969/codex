@@ -1,6 +1,5 @@
-use crate::history_cell::{
-    HistoryCell, {self},
-};
+use crate::history_cell::HistoryCell;
+use crate::history_cell::{self};
 use codex_core::config::Config;
 use ratatui::text::Line;
 

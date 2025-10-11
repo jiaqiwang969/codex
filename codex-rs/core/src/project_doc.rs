@@ -195,7 +195,8 @@ fn candidate_filenames<'a>(config: &'a Config) -> Vec<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ConfigOverrides, ConfigToml};
+    use crate::config::ConfigOverrides;
+    use crate::config::ConfigToml;
     use std::fs;
     use tempfile::TempDir;
 

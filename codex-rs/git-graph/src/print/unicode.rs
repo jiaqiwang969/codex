@@ -1,11 +1,15 @@
 //! Create graphs in Unicode format with ANSI X3.64 / ISO 6429 colour codes
 
-use crate::graph::{CommitInfo, GitGraph, HeadInfo};
+use crate::graph::CommitInfo;
+use crate::graph::GitGraph;
+use crate::graph::HeadInfo;
 use crate::print::format::CommitFormat;
-use crate::settings::{Characters, Settings};
+use crate::settings::Characters;
+use crate::settings::Settings;
 use itertools::Itertools;
 use std::cmp::max;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::collections::hash_map::Entry::Occupied;
+use std::collections::hash_map::Entry::Vacant;
 use std::collections::HashMap;
 use std::fmt::Write;
 use textwrap::Options;

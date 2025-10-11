@@ -1,22 +1,35 @@
 use crate::pager_overlay::Overlay;
 use codex_ansi_escape::ansi_escape_line;
-use ratatui::{style::Stylize, text::Line};
-use std::{path::Path, process::Command};
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use std::path::Path;
+use std::process::Command;
 
 // Prefer the embedded git-graph library (round Unicode style) when available.
 // This produces rounded connectors (╭╮╯╰) and colored branches. If it fails
 // for any reason, we fall back to `git log --graph`.
 #[allow(unused_imports)]
-use {
-    git_graph::config::get_model_name,
-    git_graph::get_repo,
-    git_graph::graph::GitGraph,
-    git_graph::print::format::CommitFormat,
-    git_graph::print::unicode::print_unicode,
-    git_graph::settings::{
-        BranchOrder, BranchSettings, BranchSettingsDef, Characters, MergePatterns, Settings,
-    },
-};
+use git_graph::config::get_model_name;
+#[allow(unused_imports)]
+use git_graph::get_repo;
+#[allow(unused_imports)]
+use git_graph::graph::GitGraph;
+#[allow(unused_imports)]
+use git_graph::print::format::CommitFormat;
+#[allow(unused_imports)]
+use git_graph::print::unicode::print_unicode;
+#[allow(unused_imports)]
+use git_graph::settings::BranchOrder;
+#[allow(unused_imports)]
+use git_graph::settings::BranchSettings;
+#[allow(unused_imports)]
+use git_graph::settings::BranchSettingsDef;
+#[allow(unused_imports)]
+use git_graph::settings::Characters;
+#[allow(unused_imports)]
+use git_graph::settings::MergePatterns;
+#[allow(unused_imports)]
+use git_graph::settings::Settings;
 
 /// Convert ASCII art to round/Unicode style
 fn convert_to_round_style(line: &str) -> String {

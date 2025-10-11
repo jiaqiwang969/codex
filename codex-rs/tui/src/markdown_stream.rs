@@ -120,7 +120,8 @@ pub(crate) fn simulate_stream_markdown_for_tests(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_core::config::{Config, ConfigOverrides};
+    use codex_core::config::Config;
+    use codex_core::config::ConfigOverrides;
     use ratatui::style::Color;
 
     async fn test_config() -> Config {

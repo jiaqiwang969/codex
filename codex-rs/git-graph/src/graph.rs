@@ -18,10 +18,19 @@
 //! merges (multiple parents), and show the remaining parent relations.
 
 use crate::print::colors::to_terminal_color;
-use crate::settings::{BranchOrder, BranchSettings, MergePatterns, Settings};
-use git2::{BranchType, Commit, Error, Oid, Reference, Repository};
+use crate::settings::BranchOrder;
+use crate::settings::BranchSettings;
+use crate::settings::MergePatterns;
+use crate::settings::Settings;
+use git2::BranchType;
+use git2::Commit;
+use git2::Error;
+use git2::Oid;
+use git2::Reference;
+use git2::Repository;
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 const ORIGIN: &str = "origin/";
 const FORK: &str = "fork/";

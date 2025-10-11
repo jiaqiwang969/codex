@@ -1,7 +1,8 @@
 #![cfg(not(target_os = "windows"))]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use core_test_support::{responses, test_codex_exec::test_codex_exec};
+use core_test_support::responses;
+use core_test_support::test_codex_exec::test_codex_exec;
 use serde_json::Value;
 use wiremock::matchers::any;
 

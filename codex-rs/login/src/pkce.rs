@@ -1,6 +1,7 @@
 use base64::Engine;
 use rand::RngCore;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
+use sha2::Sha256;
 
 #[derive(Debug, Clone)]
 pub struct PkceCodes {

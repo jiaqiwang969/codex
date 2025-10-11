@@ -21,21 +21,27 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-use std::{io, io::Write};
+use std::io;
+use std::io::Write;
 
-use crossterm::{
-    cursor::MoveTo,
-    queue,
-    style::{Colors, Print, SetAttribute, SetBackgroundColor, SetColors, SetForegroundColor},
-    terminal::Clear,
-};
-use ratatui::{
-    backend::{Backend, ClearType},
-    buffer::Buffer,
-    layout::{Position, Rect, Size},
-    style::{Color, Modifier},
-    widgets::WidgetRef,
-};
+use crossterm::cursor::MoveTo;
+use crossterm::queue;
+use crossterm::style::Colors;
+use crossterm::style::Print;
+use crossterm::style::SetAttribute;
+use crossterm::style::SetBackgroundColor;
+use crossterm::style::SetColors;
+use crossterm::style::SetForegroundColor;
+use crossterm::terminal::Clear;
+use ratatui::backend::Backend;
+use ratatui::backend::ClearType;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Position;
+use ratatui::layout::Rect;
+use ratatui::layout::Size;
+use ratatui::style::Color;
+use ratatui::style::Modifier;
+use ratatui::widgets::WidgetRef;
 
 #[derive(Debug, Hash)]
 pub struct Frame<'a> {

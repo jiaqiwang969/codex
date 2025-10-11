@@ -1,8 +1,7 @@
 use codex_protocol::custom_prompts::CustomPrompt;
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+use std::collections::HashSet;
+use std::path::Path;
+use std::path::PathBuf;
 use tokio::fs;
 
 /// Return the default prompts directory: `$CODEX_HOME/prompts`.

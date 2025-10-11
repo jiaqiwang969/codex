@@ -1,10 +1,10 @@
 use serde::Serialize;
 
-use crate::{
-    arg_matcher::{ArgMatcher, ArgMatcherCardinality},
-    error::{Error, Result},
-    valid_exec::MatchedArg,
-};
+use crate::arg_matcher::ArgMatcher;
+use crate::arg_matcher::ArgMatcherCardinality;
+use crate::error::Error;
+use crate::error::Result;
+use crate::valid_exec::MatchedArg;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PositionalArg {

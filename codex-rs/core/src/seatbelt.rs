@@ -1,13 +1,12 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 use tokio::process::Child;
 
-use crate::{
-    protocol::SandboxPolicy,
-    spawn::{CODEX_SANDBOX_ENV_VAR, StdioPolicy, spawn_child_async},
-};
+use crate::protocol::SandboxPolicy;
+use crate::spawn::CODEX_SANDBOX_ENV_VAR;
+use crate::spawn::StdioPolicy;
+use crate::spawn::spawn_child_async;
 
 const MACOS_SEATBELT_BASE_POLICY: &str = include_str!("seatbelt_base_policy.sbpl");
 
@@ -124,13 +123,13 @@ fn create_seatbelt_command_args(
 
 #[cfg(test)]
 mod tests {
-    use super::{MACOS_SEATBELT_BASE_POLICY, create_seatbelt_command_args};
+    use super::MACOS_SEATBELT_BASE_POLICY;
+    use super::create_seatbelt_command_args;
     use crate::protocol::SandboxPolicy;
     use pretty_assertions::assert_eq;
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-    };
+    use std::fs;
+    use std::path::Path;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]

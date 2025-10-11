@@ -1,7 +1,8 @@
-use crate::config_types::{
-    EnvironmentVariablePattern, ShellEnvironmentPolicy, ShellEnvironmentPolicyInherit,
-};
-use std::collections::{HashMap, HashSet};
+use crate::config_types::EnvironmentVariablePattern;
+use crate::config_types::ShellEnvironmentPolicy;
+use crate::config_types::ShellEnvironmentPolicyInherit;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// Construct an environment map based on the rules in the specified policy. The
 /// resulting map can be passed directly to `Command::envs()` after calling

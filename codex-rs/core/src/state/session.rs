@@ -2,10 +2,10 @@
 
 use codex_protocol::models::ResponseItem;
 
-use crate::{
-    conversation_history::ConversationHistory,
-    protocol::{RateLimitSnapshot, TokenUsage, TokenUsageInfo},
-};
+use crate::conversation_history::ConversationHistory;
+use crate::protocol::RateLimitSnapshot;
+use crate::protocol::TokenUsage;
+use crate::protocol::TokenUsageInfo;
 
 /// Persistent, session-scoped state previously stored directly on `Session`.
 #[derive(Default)]

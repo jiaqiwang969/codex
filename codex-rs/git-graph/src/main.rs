@@ -1,21 +1,35 @@
 //! Command line tool to show clear git graphs arranged for your branching model.
 
-use clap::{crate_version, Arg, Command};
+use clap::crate_version;
+use clap::Arg;
+use clap::Command;
 use crossterm::cursor::MoveToRow;
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
 use crossterm::style::Print;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
-use crossterm::{ErrorKind, ExecutableCommand};
+use crossterm::terminal::disable_raw_mode;
+use crossterm::terminal::enable_raw_mode;
+use crossterm::terminal::Clear;
+use crossterm::terminal::ClearType;
+use crossterm::ErrorKind;
+use crossterm::ExecutableCommand;
 use git2::Repository;
-use git_graph::config::{
-    create_config, get_available_models, get_model, get_model_name, set_model,
-};
+use git_graph::config::create_config;
+use git_graph::config::get_available_models;
+use git_graph::config::get_model;
+use git_graph::config::get_model_name;
+use git_graph::config::set_model;
 use git_graph::get_repo;
 use git_graph::graph::GitGraph;
 use git_graph::print::format::CommitFormat;
 use git_graph::print::svg::print_svg;
 use git_graph::print::unicode::print_unicode;
-use git_graph::settings::{BranchOrder, BranchSettings, Characters, MergePatterns, Settings};
+use git_graph::settings::BranchOrder;
+use git_graph::settings::BranchSettings;
+use git_graph::settings::Characters;
+use git_graph::settings::MergePatterns;
+use git_graph::settings::Settings;
 use platform_dirs::AppDirs;
 use std::io::stdout;
 use std::str::FromStr;

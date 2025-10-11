@@ -1,8 +1,9 @@
-use std::{
-    ffi::{OsStr, OsString},
-    path::{Component, Path, PathBuf},
-    process::Command,
-};
+use std::ffi::OsStr;
+use std::ffi::OsString;
+use std::path::Component;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
 
 use crate::GitToolingError;
 

@@ -1,11 +1,16 @@
 //! Agent executor that runs codex with resume-clone in isolated worktrees
 
+use crate::AgentConfig;
+use crate::AgentResult;
+use crate::SessionRecorder;
 use crate::worktree::AgentWorktree;
-use crate::{AgentConfig, AgentResult, SessionRecorder};
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::anyhow;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;

@@ -1,13 +1,21 @@
 #![cfg(unix)]
 
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use async_channel::Receiver;
-use codex_core::{
-    error::{CodexErr, SandboxErr},
-    exec::{ExecParams, SandboxType, StdoutStream, process_exec_tool_call},
-    protocol::{Event, EventMsg, ExecCommandOutputDeltaEvent, ExecOutputStream, SandboxPolicy},
-};
+use codex_core::error::CodexErr;
+use codex_core::error::SandboxErr;
+use codex_core::exec::ExecParams;
+use codex_core::exec::SandboxType;
+use codex_core::exec::StdoutStream;
+use codex_core::exec::process_exec_tool_call;
+use codex_core::protocol::Event;
+use codex_core::protocol::EventMsg;
+use codex_core::protocol::ExecCommandOutputDeltaEvent;
+use codex_core::protocol::ExecOutputStream;
+use codex_core::protocol::SandboxPolicy;
 
 fn collect_stdout_events(rx: Receiver<Event>) -> Vec<u8> {
     let mut out = Vec::new();

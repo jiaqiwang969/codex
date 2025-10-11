@@ -1,19 +1,22 @@
 //! Bottom pane: shows the ChatComposer or a BottomPaneView, if one is active.
 use std::path::PathBuf;
 
-use crate::{app_event_sender::AppEventSender, tui::FrameRequester};
+use crate::app_event_sender::AppEventSender;
+use crate::tui::FrameRequester;
 use bottom_pane_view::BottomPaneView;
 use codex_file_search::FileMatch;
-use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    widgets::WidgetRef,
-};
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Constraint;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
+use ratatui::widgets::WidgetRef;
 use std::time::Duration;
 
 mod approval_overlay;
-pub(crate) use approval_overlay::{ApprovalOverlay, ApprovalRequest};
+pub(crate) use approval_overlay::ApprovalOverlay;
+pub(crate) use approval_overlay::ApprovalRequest;
 mod bottom_pane_view;
 mod chat_composer;
 mod chat_composer_history;
@@ -36,11 +39,13 @@ pub(crate) enum CancellationEvent {
     NotHandled,
 }
 
-pub(crate) use chat_composer::{ChatComposer, InputResult};
+pub(crate) use chat_composer::ChatComposer;
+pub(crate) use chat_composer::InputResult;
 use codex_protocol::custom_prompts::CustomPrompt;
 
 use crate::status_indicator_widget::StatusIndicatorWidget;
-pub(crate) use list_selection_view::{SelectionAction, SelectionItem};
+pub(crate) use list_selection_view::SelectionAction;
+pub(crate) use list_selection_view::SelectionItem;
 
 /// Pane displayed in the lower half of the chat UI.
 pub(crate) struct BottomPane {
@@ -619,7 +624,9 @@ mod tests {
         pane.push_approval_request(exec_request());
 
         // Simulate pressing 'n' (No) on the modal.
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
         pane.handle_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
 
         // After denial, since the task is still running, the status indicator should be

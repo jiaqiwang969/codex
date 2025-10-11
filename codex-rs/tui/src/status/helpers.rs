@@ -1,10 +1,11 @@
-use crate::{exec_command::relativize_to_home, text_formatting};
-use chrono::{DateTime, Local};
-use codex_core::{
-    auth::{get_auth_file, try_read_auth_json},
-    config::Config,
-    project_doc::discover_project_doc_paths,
-};
+use crate::exec_command::relativize_to_home;
+use crate::text_formatting;
+use chrono::DateTime;
+use chrono::Local;
+use codex_core::auth::get_auth_file;
+use codex_core::auth::try_read_auth_json;
+use codex_core::config::Config;
+use codex_core::project_doc::discover_project_doc_paths;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 

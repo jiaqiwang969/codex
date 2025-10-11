@@ -1,7 +1,6 @@
-use std::{
-    future::Future,
-    path::{Path, PathBuf},
-};
+use std::future::Future;
+use std::path::Path;
+use std::path::PathBuf;
 
 use codex_core::CODEX_APPLY_PATCH_ARG1;
 #[cfg(unix)]

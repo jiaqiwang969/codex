@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
-use codex_core::{
-    CodexConversation, ConversationManager, NewConversation, config::Config, protocol::Op,
-};
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use codex_core::CodexConversation;
+use codex_core::ConversationManager;
+use codex_core::NewConversation;
+use codex_core::config::Config;
+use codex_core::protocol::Op;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::unbounded_channel;
 
-use crate::{app_event::AppEvent, app_event_sender::AppEventSender};
+use crate::app_event::AppEvent;
+use crate::app_event_sender::AppEventSender;
 
 /// Spawn the agent bootstrapper and op forwarding loop, returning the
 /// `UnboundedSender<Op>` used by the UI to submit operations.

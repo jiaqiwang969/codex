@@ -1,6 +1,5 @@
-use std::io::{
-    Read, {self},
-};
+use std::io::Read;
+use std::io::{self};
 
 fn main() {
     let mut input = String::new();

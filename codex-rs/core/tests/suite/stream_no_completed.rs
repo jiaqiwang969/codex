@@ -39,7 +39,8 @@ async fn retries_on_early_close() {
     struct SeqResponder;
     impl Respond for SeqResponder {
         fn respond(&self, _: &Request) -> ResponseTemplate {
-            use std::sync::atomic::{AtomicUsize, Ordering};
+            use std::sync::atomic::AtomicUsize;
+            use std::sync::atomic::Ordering;
             static CALLS: AtomicUsize = AtomicUsize::new(0);
             let n = CALLS.fetch_add(1, Ordering::SeqCst);
             if n == 0 {

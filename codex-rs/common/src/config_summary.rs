@@ -1,4 +1,5 @@
-use codex_core::{WireApi, config::Config};
+use codex_core::WireApi;
+use codex_core::config::Config;
 
 use crate::sandbox_summary::summarize_sandbox_policy;
 

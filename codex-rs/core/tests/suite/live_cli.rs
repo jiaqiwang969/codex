@@ -6,7 +6,8 @@
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::process::Stdio;
 use tempfile::TempDir;
 
 fn require_api_key() -> String {
@@ -17,10 +18,9 @@ fn require_api_key() -> String {
 /// Helper that spawns the binary inside a TempDir with minimal flags. Returns (Assert, TempDir).
 fn run_live(prompt: &str) -> (assert_cmd::assert::Assert, TempDir) {
     #![expect(clippy::unwrap_used)]
-    use std::{
-        io::{Read, Write},
-        thread,
-    };
+    use std::io::Read;
+    use std::io::Write;
+    use std::thread;
 
     let dir = TempDir::new().unwrap();
 

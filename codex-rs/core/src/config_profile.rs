@@ -2,7 +2,9 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 use crate::protocol::AskForApproval;
-use codex_protocol::config_types::{ReasoningEffort, ReasoningSummary, Verbosity};
+use codex_protocol::config_types::ReasoningEffort;
+use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::Verbosity;
 
 /// Collection of common configuration options that a user can define as a unit
 /// in `config.toml`.
