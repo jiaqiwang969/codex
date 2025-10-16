@@ -69,6 +69,85 @@ pub enum ViewMode {
     SessionOnly,  // Full-screen session list
 }
 
+/// Pagination manager for session lists
+#[derive(Debug, Clone)]
+pub struct Pagination {
+    pub total_items: usize,
+    pub items_per_page: usize,
+    pub current_page: usize,
+}
+
+impl Pagination {
+    /// Create new pagination from total items
+    pub fn new(total_items: usize, items_per_page: usize) -> Self {
+        Pagination {
+            total_items,
+            items_per_page,
+            current_page: 0,
+        }
+    }
+
+    /// Get the total number of pages
+    pub fn total_pages(&self) -> usize {
+        (self.total_items + self.items_per_page - 1) / self.items_per_page
+    }
+
+    /// Get the start index for current page
+    pub fn page_start(&self) -> usize {
+        self.current_page * self.items_per_page
+    }
+
+    /// Get the end index for current page (exclusive)
+    pub fn page_end(&self) -> usize {
+        ((self.current_page + 1) * self.items_per_page).min(self.total_items)
+    }
+
+    /// Get items for the current page (slice indices)
+    pub fn page_range(&self) -> std::ops::Range<usize> {
+        self.page_start()..self.page_end()
+    }
+
+    /// Move to next page
+    pub fn next_page(&mut self) -> bool {
+        if self.current_page + 1 < self.total_pages() {
+            self.current_page += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move to previous page
+    pub fn prev_page(&mut self) -> bool {
+        if self.current_page > 0 {
+            self.current_page -= 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Jump to first page
+    pub fn first_page(&mut self) {
+        self.current_page = 0;
+    }
+
+    /// Jump to last page
+    pub fn last_page(&mut self) {
+        self.current_page = self.total_pages().saturating_sub(1);
+    }
+
+    /// Check if there's a next page
+    pub fn has_next(&self) -> bool {
+        self.current_page + 1 < self.total_pages()
+    }
+
+    /// Check if there's a previous page
+    pub fn has_prev(&self) -> bool {
+        self.current_page > 0
+    }
+}
+
 /// State management for the session picker
 #[derive(Debug, Clone)]
 pub struct PickerState {
@@ -76,7 +155,7 @@ pub struct PickerState {
     pub selected_idx: usize,
     pub scroll_offset_left: usize,      // For left panel scrolling
     pub scroll_offset_right: usize,     // For right panel scrolling
-    pub current_page: usize,            // For pagination
+    pub pagination: Pagination,         // Pagination manager
     pub view_mode: ViewMode,
     pub modal_active: bool,             // Delete or edit confirmation dialog
     pub modal_message: String,          // Message to display in modal
@@ -85,12 +164,14 @@ pub struct PickerState {
 impl PickerState {
     /// Create a new picker state from sessions list
     pub fn new(sessions: Vec<SessionInfo>) -> Self {
+        let items_count = sessions.len();
+        let pagination = Pagination::new(items_count, 30); // 30 items per page
         PickerState {
             sessions,
             selected_idx: 0,
             scroll_offset_left: 0,
             scroll_offset_right: 0,
-            current_page: 0,
+            pagination,
             view_mode: ViewMode::Split,
             modal_active: false,
             modal_message: String::new(),
@@ -100,6 +181,28 @@ impl PickerState {
     /// Get currently selected session
     pub fn selected_session(&self) -> Option<&SessionInfo> {
         self.sessions.get(self.selected_idx)
+    }
+
+    /// Get sessions for the current page
+    pub fn current_page_sessions(&self) -> &[SessionInfo] {
+        let range = self.pagination.page_range();
+        &self.sessions[range]
+    }
+
+    /// Move to next page and reset selection to first item on page
+    pub fn next_page(&mut self) {
+        if self.pagination.next_page() {
+            self.selected_idx = self.pagination.page_start();
+            self.scroll_offset_right = 0;
+        }
+    }
+
+    /// Move to previous page and reset selection to first item on page
+    pub fn prev_page(&mut self) {
+        if self.pagination.prev_page() {
+            self.selected_idx = self.pagination.page_start();
+            self.scroll_offset_right = 0;
+        }
     }
 
     /// Move selection up
@@ -127,18 +230,6 @@ impl PickerState {
     /// Jump to last session
     pub fn select_last(&mut self) {
         self.selected_idx = self.sessions.len().saturating_sub(1);
-        self.scroll_offset_right = 0;
-    }
-
-    /// Page up (jump 5 items)
-    pub fn page_prev(&mut self) {
-        self.selected_idx = self.selected_idx.saturating_sub(5);
-        self.scroll_offset_right = 0;
-    }
-
-    /// Page down (jump 5 items)
-    pub fn page_next(&mut self) {
-        self.selected_idx = (self.selected_idx + 5).min(self.sessions.len().saturating_sub(1));
         self.scroll_offset_right = 0;
     }
 
@@ -237,8 +328,8 @@ impl PickerState {
             PickerEvent::SelectPrev => self.select_prev(),
             PickerEvent::SelectFirst => self.select_first(),
             PickerEvent::SelectLast => self.select_last(),
-            PickerEvent::PageNext => self.page_next(),
-            PickerEvent::PagePrev => self.page_prev(),
+            PickerEvent::PageNext => self.next_page(),
+            PickerEvent::PagePrev => self.prev_page(),
 
             PickerEvent::ScrollUp => self.scroll_preview_up(),
             PickerEvent::ScrollDown => self.scroll_preview_down(),
@@ -552,10 +643,14 @@ fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usi
     }
 
     // Header with pagination info
+    let total_sessions = sessions.len();
+    let items_per_page = 30;
+    let total_pages = (total_sessions + items_per_page - 1) / items_per_page;
+    let current_page = 1; // Default to page 1 for this renderer
+
     let header = format!(
-        "SESSIONS  │  Page 1/1 │ Showing {}/{}",
-        sessions.len(),
-        sessions.len()
+        "SESSIONS  │  Page {}/{} │ Showing {}/{}",
+        current_page, total_pages, sessions.len(), total_sessions
     );
     lines.push(ansi_escape_line(&header).bold());
     lines.push(Line::from(""));
@@ -563,6 +658,75 @@ fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usi
     // Display sessions (3 lines per session + 1 blank line spacing)
     for (idx, session) in sessions.iter().enumerate() {
         let is_selected = selected_idx == Some(idx);
+        let marker = if is_selected { "▶" } else { " " };
+
+        // Line 1: ID, age
+        let line1_text = format!(
+            " {} {}  ({})",
+            marker,
+            session.id.as_str().cyan(),
+            session.age.as_str().dim()
+        );
+        let mut line1 = ansi_escape_line(&line1_text);
+        if is_selected {
+            line1 = line1.reversed();
+        }
+        lines.push(line1);
+
+        // Line 2: CWD or path
+        let line2_text = format!("   {}", session.cwd.as_str().dim());
+        let mut line2 = ansi_escape_line(&line2_text);
+        if is_selected {
+            line2 = line2.reversed();
+        }
+        lines.push(line2);
+
+        // Line 3: Messages + Model + Last role
+        let line3_text = format!(
+            "   {} messages • {} • {}",
+            session.message_count.to_string().yellow(),
+            session.model.as_str().cyan(),
+            format!("Last: {}", session.last_role).green()
+        );
+        let mut line3 = ansi_escape_line(&line3_text);
+        if is_selected {
+            line3 = line3.reversed();
+        }
+        lines.push(line3);
+
+        // Spacing
+        lines.push(Line::from(""));
+    }
+
+    lines
+}
+
+/// Format left panel with pagination state  - displays paginated session list with pagination info
+fn format_left_panel_sessions_paginated(sessions: &[SessionInfo], state: &PickerState, _width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    if sessions.is_empty() {
+        lines.push("No sessions".yellow().into());
+        return lines;
+    }
+
+    // Pagination information
+    let total_pages = state.pagination.total_pages();
+    let current_page = state.pagination.current_page + 1; // Display as 1-indexed
+    let showing = sessions.len();
+
+    let header = format!(
+        "SESSIONS  │  Page {}/{} │ Showing {}/{}",
+        current_page, total_pages, showing, state.sessions.len()
+    );
+    lines.push(ansi_escape_line(&header).bold());
+    lines.push(Line::from(""));
+
+    // Display sessions for current page (3 lines per session + 1 blank line spacing)
+    for (page_idx, session) in sessions.iter().enumerate() {
+        // Calculate absolute index in the full list
+        let abs_idx = state.pagination.page_start() + page_idx;
+        let is_selected = state.selected_idx == abs_idx;
         let marker = if is_selected { "▶" } else { " " };
 
         // Line 1: ID, age
