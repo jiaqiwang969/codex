@@ -2,6 +2,7 @@ use crate::pager_overlay::Overlay;
 use codex_ansi_escape::ansi_escape_line;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -19,6 +20,154 @@ pub struct SessionInfo {
     pub total_tokens: usize,
     pub model: String,
 }
+
+/// Cached preview data for a session (messages and metadata)
+#[derive(Debug, Clone)]
+struct PreviewCache {
+    messages: Vec<(String, String, String)>, // (role, content, timestamp)
+    cached_at: u64,                           // Unix timestamp when cached
+}
+
+/// Message summary for quick access (count and last role)
+#[derive(Debug, Clone)]
+struct MessageSummary {
+    message_count: usize,
+    last_role: String,
+    last_update: u64,
+}
+
+/// Multi-layered cache for session picker performance
+/// Stores metadata, previews, and message summaries to avoid repeated file I/O
+#[derive(Debug, Clone)]
+pub struct CacheLayer {
+    // Session metadata cache (keyed by file path)
+    meta_cache: HashMap<PathBuf, SessionInfo>,
+
+    // Preview cache (keyed by session ID) - stores formatted message previews
+    preview_cache: HashMap<String, PreviewCache>,
+
+    // Message summary cache (keyed by file path) - lightweight alternative to full preview
+    summary_cache: HashMap<PathBuf, MessageSummary>,
+
+    // Cache hit/miss statistics
+    meta_hits: usize,
+    meta_misses: usize,
+    preview_hits: usize,
+    preview_misses: usize,
+}
+
+impl CacheLayer {
+    /// Create a new empty cache layer
+    pub fn new() -> Self {
+        CacheLayer {
+            meta_cache: HashMap::new(),
+            preview_cache: HashMap::new(),
+            summary_cache: HashMap::new(),
+            meta_hits: 0,
+            meta_misses: 0,
+            preview_hits: 0,
+            preview_misses: 0,
+        }
+    }
+
+    /// Get or insert session metadata in cache
+    pub fn get_or_insert_meta(
+        &mut self,
+        path: &PathBuf,
+        default: SessionInfo,
+    ) -> SessionInfo {
+        if self.meta_cache.contains_key(path) {
+            self.meta_hits += 1;
+            self.meta_cache[path].clone()
+        } else {
+            self.meta_misses += 1;
+            self.meta_cache.insert(path.clone(), default.clone());
+            default
+        }
+    }
+
+    /// Get preview from cache if available
+    pub fn get_preview(&mut self, session_id: &str) -> Option<Vec<(String, String, String)>> {
+        if let Some(cached) = self.preview_cache.get(session_id) {
+            self.preview_hits += 1;
+            Some(cached.messages.clone())
+        } else {
+            self.preview_misses += 1;
+            None
+        }
+    }
+
+    /// Store preview in cache
+    pub fn cache_preview(
+        &mut self,
+        session_id: String,
+        messages: Vec<(String, String, String)>,
+    ) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        self.preview_cache.insert(
+            session_id,
+            PreviewCache {
+                messages,
+                cached_at: now,
+            },
+        );
+    }
+
+    /// Get message summary from cache if available
+    pub fn get_summary(&mut self, path: &PathBuf) -> Option<MessageSummary> {
+        self.summary_cache.get(path).cloned()
+    }
+
+    /// Store message summary in cache
+    pub fn cache_summary(
+        &mut self,
+        path: PathBuf,
+        message_count: usize,
+        last_role: String,
+    ) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        self.summary_cache.insert(
+            path,
+            MessageSummary {
+                message_count,
+                last_role,
+                last_update: now,
+            },
+        );
+    }
+
+    /// Clear all caches (useful for refresh operations)
+    pub fn clear(&mut self) {
+        self.meta_cache.clear();
+        self.preview_cache.clear();
+        self.summary_cache.clear();
+    }
+
+    /// Get cache statistics for debugging
+    pub fn stats(&self) -> (usize, usize, usize, usize) {
+        (
+            self.meta_hits,
+            self.meta_misses,
+            self.preview_hits,
+            self.preview_misses,
+        )
+    }
+}
+
+impl Default for CacheLayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 /// Split View Layout Manager for dual-panel picker
 #[derive(Debug, Clone)]
@@ -159,6 +308,7 @@ pub struct PickerState {
     pub view_mode: ViewMode,
     pub modal_active: bool,             // Delete or edit confirmation dialog
     pub modal_message: String,          // Message to display in modal
+    pub cache: CacheLayer,              // Multi-layered cache for performance
 }
 
 impl PickerState {
@@ -175,6 +325,7 @@ impl PickerState {
             view_mode: ViewMode::Split,
             modal_active: false,
             modal_message: String::new(),
+            cache: CacheLayer::new(),
         }
     }
 
@@ -267,6 +418,29 @@ impl PickerState {
     pub fn close_modal(&mut self) {
         self.modal_active = false;
         self.modal_message.clear();
+    }
+
+    /// Get cached preview or fetch it from file
+    pub fn get_or_fetch_preview(&mut self, session: &SessionInfo, limit: usize) -> Vec<(String, String, String)> {
+        // Try to get from cache first
+        if let Some(cached) = self.cache.get_preview(&session.id) {
+            return cached;
+        }
+
+        // Not in cache, extract from file and cache it
+        let messages = extract_recent_messages_with_timestamps(&session.path, limit);
+        self.cache.cache_preview(session.id.clone(), messages.clone());
+        messages
+    }
+
+    /// Get cache statistics
+    pub fn cache_stats(&self) -> (usize, usize, usize, usize) {
+        self.cache.stats()
+    }
+
+    /// Clear the entire cache (for refresh operations)
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
     }
 }
 
