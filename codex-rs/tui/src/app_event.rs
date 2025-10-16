@@ -20,6 +20,9 @@ pub(crate) enum AppEvent {
     /// Start a new session.
     NewSession,
 
+    /// Resume an existing session from a saved rollout file.
+    ResumeSession(PathBuf),
+
     /// Request to exit the application gracefully.
     ExitRequest,
 

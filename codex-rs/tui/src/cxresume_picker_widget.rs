@@ -1,11 +1,31 @@
 use crate::pager_overlay::Overlay;
+use crate::render::line_utils;
 use codex_ansi_escape::ansi_escape_line;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
+use ratatui::prelude::Widget;
+use ratatui::style::Color;
+use ratatui::style::Modifier;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::widgets::Block;
+use ratatui::widgets::Borders;
+use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
+use std::path::Path;
 use std::path::PathBuf;
+use tracing::warn;
+
+#[cfg(not(target_os = "android"))]
+use arboard::Clipboard;
+
+pub const NEW_SESSION_SENTINEL: &str = "__cxresume_new_session__";
+const FULL_PREVIEW_WRAP_WIDTH: usize = 76;
 
 /// Enhanced session metadata with comprehensive information
 #[derive(Debug, Clone)]
@@ -28,7 +48,7 @@ struct PreviewCache {
     #[allow(dead_code)]
     messages: Vec<(String, String, String)>, // (role, content, timestamp)
     #[allow(dead_code)]
-    cached_at: u64,                           // Unix timestamp when cached
+    cached_at: u64, // Unix timestamp when cached
 }
 
 /// Message summary for quick access (count and last role)
@@ -84,11 +104,7 @@ impl CacheLayer {
 
     /// Get or insert session metadata in cache
     #[allow(dead_code)]
-    pub fn get_or_insert_meta(
-        &mut self,
-        path: &PathBuf,
-        default: SessionInfo,
-    ) -> SessionInfo {
+    pub fn get_or_insert_meta(&mut self, path: &PathBuf, default: SessionInfo) -> SessionInfo {
         if self.meta_cache.contains_key(path) {
             self.meta_hits += 1;
             self.meta_cache[path].clone()
@@ -111,11 +127,7 @@ impl CacheLayer {
     }
 
     /// Store preview in cache
-    pub fn cache_preview(
-        &mut self,
-        session_id: String,
-        messages: Vec<(String, String, String)>,
-    ) {
+    pub fn cache_preview(&mut self, session_id: String, messages: Vec<(String, String, String)>) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -138,12 +150,7 @@ impl CacheLayer {
 
     /// Store message summary in cache
     #[allow(dead_code)]
-    pub fn cache_summary(
-        &mut self,
-        path: PathBuf,
-        message_count: usize,
-        last_role: String,
-    ) {
+    pub fn cache_summary(&mut self, path: PathBuf, message_count: usize, last_role: String) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -190,18 +197,17 @@ impl Default for CacheLayer {
     }
 }
 
-
 /// Split View Layout Manager for dual-panel picker
 #[derive(Debug, Clone)]
 pub struct SplitLayout {
-    pub left_width: u16,      // Left panel width (35%)
-    pub right_width: u16,     // Right panel width (65%)
+    pub left_width: u16,  // Left panel width (35%)
+    pub right_width: u16, // Right panel width (65%)
     #[allow(dead_code)]
     pub total_height: u16,
     #[allow(dead_code)]
     pub total_width: u16,
     #[allow(dead_code)]
-    pub gap: u16,             // Space between panels
+    pub gap: u16, // Space between panels
 }
 
 impl SplitLayout {
@@ -240,9 +246,16 @@ impl SplitLayout {
 /// View mode for the picker
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
-    Split,        // Dual-panel view (default)
-    FullPreview,  // Full-screen message preview
-    SessionOnly,  // Full-screen session list
+    Split,       // Dual-panel view (default)
+    FullPreview, // Full-screen message preview
+    SessionOnly, // Full-screen session list
+}
+
+/// Which pane currently has keyboard focus
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusPane {
+    LeftList,
+    RightPreview,
 }
 
 /// Pagination manager for session lists
@@ -334,13 +347,14 @@ pub struct PickerState {
     pub sessions: Vec<SessionInfo>,
     pub selected_idx: usize,
     #[allow(dead_code)]
-    pub scroll_offset_left: usize,      // For left panel scrolling
-    pub scroll_offset_right: usize,     // For right panel scrolling
-    pub pagination: Pagination,         // Pagination manager
+    pub scroll_offset_left: usize, // For left panel scrolling
+    pub scroll_offset_right: usize, // For right panel scrolling
+    pub pagination: Pagination,     // Pagination manager
     pub view_mode: ViewMode,
-    pub modal_active: bool,             // Delete or edit confirmation dialog
-    pub modal_message: String,          // Message to display in modal
-    pub cache: CacheLayer,              // Multi-layered cache for performance
+    pub focus: FocusPane,
+    pub modal_active: bool,    // Delete or edit confirmation dialog
+    pub modal_message: String, // Message to display in modal
+    pub cache: CacheLayer,     // Multi-layered cache for performance
 }
 
 impl PickerState {
@@ -355,6 +369,7 @@ impl PickerState {
             scroll_offset_right: 0,
             pagination,
             view_mode: ViewMode::Split,
+            focus: FocusPane::LeftList,
             modal_active: false,
             modal_message: String::new(),
             cache: CacheLayer::new(),
@@ -445,6 +460,15 @@ impl PickerState {
             ViewMode::FullPreview => ViewMode::SessionOnly,
             ViewMode::SessionOnly => ViewMode::Split,
         };
+
+        match self.view_mode {
+            ViewMode::Split => self.focus_left(),
+            ViewMode::FullPreview => {
+                self.focus_right();
+                self.scroll_offset_right = 0;
+            }
+            ViewMode::SessionOnly => self.focus_left(),
+        }
     }
 
     /// Open delete confirmation modal
@@ -466,7 +490,11 @@ impl PickerState {
 
     /// Get cached preview or fetch it from file
     #[allow(dead_code)]
-    pub fn get_or_fetch_preview(&mut self, session: &SessionInfo, limit: usize) -> Vec<(String, String, String)> {
+    pub fn get_or_fetch_preview(
+        &mut self,
+        session: &SessionInfo,
+        limit: usize,
+    ) -> Vec<(String, String, String)> {
         // Try to get from cache first
         if let Some(cached) = self.cache.get_preview(&session.id) {
             return cached;
@@ -474,7 +502,8 @@ impl PickerState {
 
         // Not in cache, extract from file and cache it
         let messages = extract_recent_messages_with_timestamps(&session.path, limit);
-        self.cache.cache_preview(session.id.clone(), messages.clone());
+        self.cache
+            .cache_preview(session.id.clone(), messages.clone());
         messages
     }
 
@@ -524,6 +553,47 @@ impl PickerState {
             self.prefetch_preview_for_index(idx);
         }
     }
+
+    pub fn reload_sessions(&mut self, sessions: Vec<SessionInfo>) {
+        let per_page = self.pagination.items_per_page;
+        let previous_id = self.selected_session().map(|s| s.id.clone());
+
+        self.sessions = sessions;
+        self.cache.clear();
+        self.pagination = Pagination::new(self.sessions.len(), per_page);
+
+        if self.sessions.is_empty() {
+            self.selected_idx = 0;
+            self.scroll_offset_right = 0;
+            return;
+        }
+
+        let mut selected_idx = previous_id
+            .and_then(|id| self.sessions.iter().position(|s| s.id == id))
+            .unwrap_or(0);
+        if selected_idx >= self.sessions.len() {
+            selected_idx = 0;
+        }
+
+        self.selected_idx = selected_idx;
+        self.pagination.current_page = selected_idx / per_page.max(1);
+        self.scroll_offset_right = 0;
+
+        self.prefetch_visible_page();
+        self.prefetch_adjacent_sessions();
+    }
+
+    fn focus_left(&mut self) {
+        if matches!(self.view_mode, ViewMode::Split | ViewMode::SessionOnly) {
+            self.focus = FocusPane::LeftList;
+        }
+    }
+
+    fn focus_right(&mut self) {
+        if matches!(self.view_mode, ViewMode::Split | ViewMode::FullPreview) {
+            self.focus = FocusPane::RightPreview;
+        }
+    }
 }
 
 /// Event type enum for picker keyboard input
@@ -538,28 +608,32 @@ pub enum PickerEvent {
     PagePrev,
 
     // Preview scrolling
+    #[allow(dead_code)]
     ScrollUp,
+    #[allow(dead_code)]
     ScrollDown,
+    FocusLeft,
+    FocusRight,
 
     // Actions
-    Resume,           // Enter key - return selected session
-    Delete,           // d key - confirm delete
+    Resume, // Enter key - return selected session
+    Delete, // d key - confirm delete
     #[allow(dead_code)]
-    ToggleViewMode,   // f key - cycle through views
-    CopySessionId,    // c key - copy to clipboard
-    NewSession,       // n key - create new
+    ToggleViewMode, // f key - cycle through views
+    CopySessionId, // c key - copy to clipboard
+    NewSession, // n key - create new
 
     // Navigation modes
-    CycleViewMode,    // f key - Split → FullPreview → SessionOnly → Split
-    Refresh,          // r key - refresh sessions list
+    CycleViewMode, // f key - Split → FullPreview → SessionOnly → Split
+    Refresh,       // r key - refresh sessions list
 
     // Dialog control
-    ConfirmAction,    // y key in modal
+    ConfirmAction, // y key in modal
     #[allow(dead_code)]
-    CancelAction,     // n key in modal
+    CancelAction, // n key in modal
 
     // Exit
-    Exit,             // q or Esc
+    Exit, // q or Esc
 }
 
 impl PickerState {
@@ -604,15 +678,64 @@ impl PickerState {
 
         // Normal mode event handling
         match event {
-            PickerEvent::SelectNext => self.select_next(),
-            PickerEvent::SelectPrev => self.select_prev(),
-            PickerEvent::SelectFirst => self.select_first(),
-            PickerEvent::SelectLast => self.select_last(),
-            PickerEvent::PageNext => self.next_page(),
-            PickerEvent::PagePrev => self.prev_page(),
+            PickerEvent::FocusLeft => self.focus_left(),
+            PickerEvent::FocusRight => self.focus_right(),
 
-            PickerEvent::ScrollUp => self.scroll_preview_up(),
-            PickerEvent::ScrollDown => self.scroll_preview_down(),
+            PickerEvent::SelectNext => {
+                if self.focus == FocusPane::LeftList {
+                    self.select_next();
+                } else {
+                    self.scroll_preview_down();
+                }
+            }
+            PickerEvent::SelectPrev => {
+                if self.focus == FocusPane::LeftList {
+                    self.select_prev();
+                } else {
+                    self.scroll_preview_up();
+                }
+            }
+            PickerEvent::SelectFirst => {
+                if self.focus == FocusPane::LeftList {
+                    self.select_first();
+                } else {
+                    self.scroll_offset_right = 0;
+                }
+            }
+            PickerEvent::SelectLast => {
+                if self.focus == FocusPane::LeftList {
+                    self.select_last();
+                } else {
+                    self.scroll_offset_right = usize::MAX;
+                }
+            }
+            PickerEvent::PageNext => {
+                if self.focus == FocusPane::LeftList {
+                    self.next_page();
+                } else {
+                    self.scroll_offset_right = self.scroll_offset_right.saturating_add(10);
+                }
+            }
+            PickerEvent::PagePrev => {
+                if self.focus == FocusPane::LeftList {
+                    self.prev_page();
+                } else {
+                    self.scroll_offset_right = self.scroll_offset_right.saturating_sub(10);
+                }
+            }
+
+            PickerEvent::ScrollUp => {
+                self.focus_right();
+                if self.focus == FocusPane::RightPreview {
+                    self.scroll_preview_up();
+                }
+            }
+            PickerEvent::ScrollDown => {
+                self.focus_right();
+                if self.focus == FocusPane::RightPreview {
+                    self.scroll_preview_down();
+                }
+            }
 
             PickerEvent::ToggleViewMode | PickerEvent::CycleViewMode => {
                 self.toggle_view_mode();
@@ -629,13 +752,15 @@ impl PickerState {
             }
 
             PickerEvent::CopySessionId => {
-                if let Some(_session) = self.selected_session() {
-                    // Would copy to clipboard: _session.id.clone()
+                if let Some(session) = self.selected_session() {
+                    if let Err(err) = copy_to_clipboard(session.id.as_str()) {
+                        warn!("failed to copy session id: {err}");
+                    }
                 }
             }
 
             PickerEvent::NewSession => {
-                // Would create new session
+                return Some(NEW_SESSION_SENTINEL.to_string());
             }
 
             PickerEvent::Refresh => {
@@ -653,8 +778,16 @@ impl PickerState {
     }
 
     /// Convert KeyEvent to PickerEvent (for integration with Overlay)
-    pub fn key_to_event(key_code: crossterm::event::KeyCode) -> Option<PickerEvent> {
+    pub fn key_to_event(&self, key_code: crossterm::event::KeyCode) -> Option<PickerEvent> {
         use crossterm::event::KeyCode;
+
+        if self.modal_active {
+            return match key_code {
+                KeyCode::Char('y') | KeyCode::Enter => Some(PickerEvent::ConfirmAction),
+                KeyCode::Char('n') | KeyCode::Esc => Some(PickerEvent::CancelAction),
+                _ => None,
+            };
+        }
 
         match key_code {
             KeyCode::Up => Some(PickerEvent::SelectPrev),
@@ -663,9 +796,8 @@ impl PickerState {
             KeyCode::End => Some(PickerEvent::SelectLast),
             KeyCode::PageUp => Some(PickerEvent::PagePrev),
             KeyCode::PageDown => Some(PickerEvent::PageNext),
-
-            KeyCode::Char('j') => Some(PickerEvent::ScrollDown),
-            KeyCode::Char('k') => Some(PickerEvent::ScrollUp),
+            KeyCode::Left => Some(PickerEvent::FocusLeft),
+            KeyCode::Right => Some(PickerEvent::FocusRight),
 
             KeyCode::Enter => Some(PickerEvent::Resume),
             KeyCode::Char('d') => Some(PickerEvent::Delete),
@@ -674,7 +806,6 @@ impl PickerState {
             KeyCode::Char('n') => Some(PickerEvent::NewSession),
             KeyCode::Char('r') => Some(PickerEvent::Refresh),
 
-            KeyCode::Char('y') => Some(PickerEvent::ConfirmAction),
             KeyCode::Char('q') => Some(PickerEvent::Exit),
             KeyCode::Esc => Some(PickerEvent::Exit),
 
@@ -695,7 +826,9 @@ fn get_sessions_dir() -> Result<PathBuf, String> {
 }
 
 /// Extract enhanced session metadata from .jsonl file
-fn extract_session_meta(path: &PathBuf) -> Result<(String, String, usize, String, usize, String), String> {
+fn extract_session_meta(
+    path: &PathBuf,
+) -> Result<(String, String, usize, String, usize, String), String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let reader = std::io::BufReader::new(file);
     let mut lines = reader.lines();
@@ -703,7 +836,6 @@ fn extract_session_meta(path: &PathBuf) -> Result<(String, String, usize, String
     let mut session_id = String::new();
     let mut cwd = String::new();
     let mut model = String::from("unknown");
-    let mut message_count = 0;
     let mut last_role = String::from("-");
     let mut total_tokens = 0;
 
@@ -732,83 +864,291 @@ fn extract_session_meta(path: &PathBuf) -> Result<(String, String, usize, String
         }
     }
 
-    // Second pass: count messages and extract last role and token usage
-    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    // Second pass: gather message metadata
+    let parsed = collect_session_messages(path);
+    if let Some(tokens) = parsed.total_tokens {
+        total_tokens = tokens;
+    }
+    let dialog_messages: Vec<&ParsedMessage> = parsed
+        .messages
+        .iter()
+        .filter(|m| matches!(m.role.as_str(), "User" | "Assistant"))
+        .collect();
+    let message_count = dialog_messages.len();
+    if let Some(last) = dialog_messages.last() {
+        last_role = last.role.clone();
+    }
+
+    if session_id.is_empty() {
+        session_id = path.file_name().unwrap().to_string_lossy().to_string();
+    }
+
+    Ok((
+        session_id,
+        cwd,
+        message_count,
+        last_role,
+        total_tokens,
+        model,
+    ))
+}
+
+#[derive(Clone, Debug)]
+struct ParsedMessage {
+    role: String,
+    content: String,
+    timestamp: Option<String>,
+}
+
+#[derive(Default)]
+struct ParsedSessionData {
+    messages: Vec<ParsedMessage>,
+    total_tokens: Option<usize>,
+}
+
+fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
+    let mut data = ParsedSessionData::default();
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return data,
+    };
+
     let reader = std::io::BufReader::new(file);
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                let msg_type = json
+    let mut first_line = true;
+    let mut new_format = false;
+
+    for line_res in reader.lines() {
+        let line = match line_res {
+            Ok(line) => line,
+            Err(_) => continue,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+            if first_line {
+                first_line = false;
+                if json
                     .get("type")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                match msg_type {
-                    "user_message" | "assistant_message" => {
-                        message_count += 1;
-                        last_role = if msg_type == "user_message" {
-                            "User".to_string()
-                        } else {
-                            "Assistant".to_string()
-                        };
-
-                        // Try to extract token count from usage if available
-                        if let Some(usage) = json.get("payload").and_then(|p| p.get("usage")) {
-                            if let Some(total) = usage.get("total_tokens").and_then(|t| t.as_u64()) {
-                                total_tokens = total as usize;
-                            }
-                        }
+                    .map_or(false, |t| t == "session_meta")
+                {
+                    new_format = true;
+                    if let Some(tokens) = extract_total_tokens(&json) {
+                        data.total_tokens = Some(tokens);
                     }
-                    _ => {}
+                    continue;
+                }
+            }
+
+            if let Some(tokens) = extract_total_tokens(&json) {
+                data.total_tokens = Some(tokens);
+            }
+
+            let message = if new_format {
+                parse_new_format_message(&json)
+            } else {
+                parse_legacy_format_message(&json)
+            };
+
+            if let Some(message) = message {
+                if !message.content.trim().is_empty() {
+                    data.messages.push(message);
                 }
             }
         }
     }
 
-    if session_id.is_empty() {
-        session_id = path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+    data
+}
+
+fn parse_new_format_message(json: &serde_json::Value) -> Option<ParsedMessage> {
+    if json
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map_or(true, |t| t != "event_msg")
+    {
+        return None;
     }
 
-    Ok((session_id, cwd, message_count, last_role, total_tokens, model))
+    let payload = json.get("payload")?;
+    let event_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let (role, content_value) = match event_type {
+        "user_message" => ("User", payload.get("message")),
+        "agent_message" => ("Assistant", payload.get("message")),
+        _ => return None,
+    };
+
+    let content = content_value
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| extract_text_from_content(payload.get("content")))?;
+
+    let timestamp = json
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .or_else(|| payload.get("timestamp").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+
+    Some(ParsedMessage {
+        role: role.to_string(),
+        content,
+        timestamp,
+    })
+}
+
+fn parse_legacy_format_message(json: &serde_json::Value) -> Option<ParsedMessage> {
+    let payload = json.get("payload");
+    let raw_role = payload
+        .and_then(|p| p.get("role").and_then(|v| v.as_str()))
+        .or_else(|| json.get("role").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let role = normalize_role(raw_role);
+
+    if role != "User" && role != "Assistant" && role != "System" {
+        return None;
+    }
+
+    let content_node = payload
+        .and_then(|p| p.get("content"))
+        .or_else(|| json.get("content"));
+    let content = extract_text_from_content(content_node)
+        .or_else(|| {
+            payload
+                .and_then(|p| p.get("text").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            json.get("text")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })?;
+
+    if content.trim().is_empty() {
+        return None;
+    }
+
+    let timestamp = json
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .or_else(|| payload.and_then(|p| p.get("timestamp").and_then(|v| v.as_str())))
+        .map(|s| s.to_string());
+
+    Some(ParsedMessage {
+        role,
+        content,
+        timestamp,
+    })
+}
+
+fn normalize_role(raw: &str) -> String {
+    match raw.to_lowercase().as_str() {
+        "user" => "User".to_string(),
+        "assistant" | "agent" => "Assistant".to_string(),
+        "system" => "System".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn extract_text_from_content(node: Option<&serde_json::Value>) -> Option<String> {
+    let mut segments: Vec<String> = Vec::new();
+    if let Some(value) = node {
+        collect_text_segments(value, &mut segments);
+    }
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join("\n"))
+    }
+}
+
+fn collect_text_segments(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(s) => out.push(s.to_string()),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                if let serde_json::Value::Object(map) = item {
+                    if let Some(text) = map.get("text").and_then(|v| v.as_str()) {
+                        out.push(text.to_string());
+                    } else if let Some(content) = map.get("content") {
+                        collect_text_segments(content, out);
+                    }
+                } else {
+                    collect_text_segments(item, out);
+                }
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(text) = map.get("text").and_then(|v| v.as_str()) {
+                out.push(text.to_string());
+            }
+            if let Some(message) = map.get("message").and_then(|v| v.as_str()) {
+                out.push(message.to_string());
+            }
+            if let Some(nested) = map.get("content") {
+                collect_text_segments(nested, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_total_tokens(json: &serde_json::Value) -> Option<usize> {
+    let payload = json.get("payload")?;
+
+    if let Some(usage) = payload.get("usage") {
+        if let Some(total) = usage.get("total_tokens").and_then(|t| t.as_u64()) {
+            return Some(total as usize);
+        }
+    }
+
+    if let Some(info) = payload.get("info") {
+        if let Some(total) = info
+            .get("total_token_usage")
+            .and_then(|usage| usage.get("total_tokens"))
+            .and_then(|t| t.as_u64())
+        {
+            return Some(total as usize);
+        }
+    }
+
+    None
+}
+
+fn format_timestamp_for_display(timestamp: Option<&String>) -> String {
+    if let Some(ts) = timestamp {
+        if let Some((_, time)) = ts.split_once('T') {
+            let trimmed = time.trim_end_matches('Z');
+            let display = trimmed.split('.').next().unwrap_or(trimmed);
+            if !display.is_empty() {
+                return display.to_string();
+            }
+        } else if !ts.is_empty() {
+            return ts.clone();
+        }
+    }
+
+    "--:--".to_string()
 }
 
 /// Extract recent messages from a session file for preview
 fn extract_recent_messages(path: &PathBuf, limit: usize) -> Vec<(String, String)> {
-    let mut messages = Vec::new();
-
-    if let Ok(file) = fs::File::open(path) {
-        let reader = std::io::BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                    let msg_type = json
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-
-                    if msg_type == "user_message" || msg_type == "assistant_message" {
-                        if let Some(payload) = json.get("payload") {
-                            if let Some(content) = payload.get("content").and_then(|c| c.as_str()) {
-                                let role = if msg_type == "user_message" { "User" } else { "Assistant" }.to_string();
-                                messages.push((role, content.to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    let ParsedSessionData { messages, .. } = collect_session_messages(path);
+    let dialog: Vec<&ParsedMessage> = messages
+        .iter()
+        .filter(|m| matches!(m.role.as_str(), "User" | "Assistant"))
+        .collect();
+    if dialog.is_empty() {
+        return Vec::new();
     }
 
-    // Keep only the last 'limit' messages
-    if messages.len() > limit {
-        messages.drain(0..messages.len() - limit);
-    }
-
-    messages
+    let start = dialog.len().saturating_sub(limit);
+    dialog[start..]
+        .iter()
+        .copied()
+        .map(|m| (m.role.clone(), m.content.clone()))
+        .collect()
 }
 
 /// Format relative time in human-readable format
@@ -839,15 +1179,14 @@ fn format_relative_time(mtime: u64) -> String {
 
 /// Get sessions in current working directory with enhanced metadata
 pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
-    let cwd = get_cwd()?;
+    let cwd_raw = get_cwd()?;
+    let cwd = cwd_raw.canonicalize().unwrap_or(cwd_raw);
     let sessions_dir = get_sessions_dir()?;
-
-    let cwd_str = cwd.to_string_lossy().to_string();
     let mut sessions = Vec::new();
 
     fn find_sessions(
-        dir: &PathBuf,
-        cwd: &str,
+        dir: &Path,
+        cwd: &Path,
         sessions: &mut Vec<SessionInfo>,
         max_depth: u32,
     ) -> Result<(), String> {
@@ -863,8 +1202,7 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
                         if let Ok((id, session_cwd, msg_count, last_role, tokens, model)) =
                             extract_session_meta(&path)
                         {
-                            // Filter by current working directory
-                            if session_cwd.is_empty() || session_cwd == cwd {
+                            if should_include_session(&session_cwd, cwd) {
                                 let mtime = entry
                                     .metadata()
                                     .ok()
@@ -889,7 +1227,7 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
                             }
                         }
                     } else if path.is_dir() {
-                        let _ = find_sessions(&path, cwd, sessions, max_depth - 1);
+                        let _ = find_sessions(path.as_path(), cwd, sessions, max_depth - 1);
                     }
                 }
             }
@@ -898,10 +1236,12 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
         Ok(())
     }
 
-    find_sessions(&sessions_dir, &cwd_str, &mut sessions, 4)?;
+    find_sessions(&sessions_dir, &cwd, &mut sessions, 4)?;
 
     // Sort by modification time (newest first)
     sessions.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+
+    sessions.retain(|session| session.message_count > 0);
 
     // Limit to recent 100 sessions for performance
     sessions.truncate(100);
@@ -913,8 +1253,31 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
     }
 }
 
+fn should_include_session(session_cwd: &str, cwd: &Path) -> bool {
+    if session_cwd.is_empty() {
+        return false;
+    }
+
+    let raw_path = PathBuf::from(session_cwd);
+    let candidate = if raw_path.is_absolute() {
+        raw_path
+    } else {
+        cwd.join(raw_path)
+    };
+
+    match candidate.canonicalize() {
+        Ok(real_path) => real_path == cwd || real_path.starts_with(cwd),
+        Err(_) => false,
+    }
+}
+
+#[allow(dead_code)]
 /// Format left panel: session list with 3 lines per session
-fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usize>, _width: u16) -> Vec<Line<'static>> {
+fn format_left_panel_sessions(
+    sessions: &[SessionInfo],
+    selected_idx: Option<usize>,
+    _width: u16,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     if sessions.is_empty() {
@@ -930,7 +1293,10 @@ fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usi
 
     let header = format!(
         "SESSIONS  │  Page {}/{} │ Showing {}/{}",
-        current_page, total_pages, sessions.len(), total_sessions
+        current_page,
+        total_pages,
+        sessions.len(),
+        total_sessions
     );
     lines.push(ansi_escape_line(&header).bold());
     lines.push(Line::from(""));
@@ -983,7 +1349,11 @@ fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usi
 
 /// Format left panel with pagination state  - displays paginated session list with pagination info
 #[allow(dead_code)]
-fn format_left_panel_sessions_paginated(sessions: &[SessionInfo], state: &PickerState, _width: u16) -> Vec<Line<'static>> {
+fn format_left_panel_sessions_paginated(
+    sessions: &[SessionInfo],
+    state: &PickerState,
+    _width: u16,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     if sessions.is_empty() {
@@ -998,7 +1368,10 @@ fn format_left_panel_sessions_paginated(sessions: &[SessionInfo], state: &Picker
 
     let header = format!(
         "SESSIONS  │  Page {}/{} │ Showing {}/{}",
-        current_page, total_pages, showing, state.sessions.len()
+        current_page,
+        total_pages,
+        showing,
+        state.sessions.len()
     );
     lines.push(ansi_escape_line(&header).bold());
     lines.push(Line::from(""));
@@ -1054,59 +1427,70 @@ fn format_left_panel_sessions_paginated(sessions: &[SessionInfo], state: &Picker
 /// Format right panel: message preview with block-style format
 fn format_right_panel_preview(session: &SessionInfo, width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
+    let effective_width = width.max(1);
 
-    // Info box
-    let info = format!(
-        "▸ Session: {} │ Path: {}",
-        session.id.as_str().cyan(),
-        session.cwd.as_str().dim()
-    );
-    lines.push(ansi_escape_line(&info));
-    lines.push(Line::from("─".repeat(width as usize)));
+    lines.push(ansi_escape_line(&format!(
+        "▸ Session: {session_id} │ Path: {session_path}",
+        session_id = session.id.as_str().cyan(),
+        session_path = session.cwd.as_str().dim(),
+    )));
+    lines.push(ansi_escape_line(&format!(
+        "▸ Model: {model} │ Messages: {count} │ Last role: {last_role}",
+        model = session.model.as_str().yellow(),
+        count = session.message_count.to_string().yellow(),
+        last_role = session.last_role.as_str().green(),
+    )));
     lines.push(Line::from(""));
 
-    // Message blocks
-    let messages = extract_recent_messages_with_timestamps(&session.path, 6);
+    let separator = "─".repeat(effective_width as usize);
+    lines.push(Line::from(separator).dim());
+    lines.push(Line::from(""));
+
+    let mut messages = extract_recent_messages_with_timestamps(&session.path, 6);
+    messages.retain(|(_, content, _)| !content.trim().is_empty());
     if messages.is_empty() {
-        lines.push("No messages".yellow().into());
-    } else {
-        for (role, content, _timestamp) in messages.iter() {
-            // Block header with vertical bar
-            let role_color = if role == "User" {
-                role.as_str().red()
-            } else {
-                role.as_str().green()
-            };
+        lines.push("Select a session to preview messages".dim().into());
+        return lines;
+    }
 
-            let header = format!("┃ {}", role_color);
-            lines.push(ansi_escape_line(&header));
+    let content_width = effective_width.saturating_sub(4).max(1) as usize;
 
-            // Message content with wrapping
-            let max_content_width = width.saturating_sub(2) as usize;
-            let mut line_count = 0;
-            let line_limit = 3; // Show max 3 lines per message in preview
+    for (idx, (role, content, timestamp)) in messages.iter().enumerate() {
+        let index = idx + 1;
+        let role_span = if role == "User" {
+            format!("{index}. {role_text}", role_text = role.as_str())
+                .red()
+                .into()
+        } else {
+            format!("{index}. {role_text}", role_text = role.as_str())
+                .green()
+                .into()
+        };
+        let header_spans = vec![
+            "┃ ".dim(),
+            role_span,
+            " ".into(),
+            timestamp.clone().dim().into(),
+        ];
+        lines.push(Line::from(header_spans));
 
-            for content_line in content.lines() {
-                if line_count >= line_limit {
-                    lines.push("  ⋮".dim().into());
-                    break;
-                }
+        let sanitized = truncate_unicode(&content.replace('\r', ""), 200);
 
-                if content_line.is_empty() {
-                    continue;
-                }
+        let wrapped = crate::wrapping::word_wrap_lines(
+            &vec![Line::from(sanitized)],
+            crate::wrapping::RtOptions::new(content_width)
+                .initial_indent("  ".into())
+                .subsequent_indent("  ".into()),
+        );
 
-                if content_line.len() > max_content_width {
-                    let chunk = &content_line[..max_content_width.saturating_sub(1)];
-                    lines.push(ansi_escape_line(&format!("  {}…", chunk)));
-                } else {
-                    lines.push(ansi_escape_line(&format!("  {}", content_line)));
-                }
-                line_count += 1;
-            }
-
-            lines.push(Line::from(""));
+        let prefixed = line_utils::prefix_lines(wrapped, "┃ ".dim().into(), "┃ ".dim().into());
+        if prefixed.is_empty() {
+            lines.push(Line::from(vec!["┃ ".dim(), "  ".into()]));
+        } else {
+            lines.extend(prefixed);
         }
+
+        lines.push(Line::from(""));
     }
 
     lines
@@ -1190,7 +1574,8 @@ fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
     )));
 
     lines.push(Line::from(""));
-    lines.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    lines
+        .push(Line::from("────────────────────────────────────────────────────────────────").dim());
     lines.push(Line::from(""));
     lines.push("STATISTICS".bold().cyan().into());
     lines.push(Line::from(""));
@@ -1218,44 +1603,31 @@ fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
 }
 
 /// Extract messages with timestamps (role, content, timestamp)
-fn extract_recent_messages_with_timestamps(path: &PathBuf, limit: usize) -> Vec<(String, String, String)> {
-    let mut messages = Vec::new();
-
-    if let Ok(file) = fs::File::open(path) {
-        let reader = std::io::BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                    let msg_type = json
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-
-                    if msg_type == "user_message" || msg_type == "assistant_message" {
-                        if let Some(payload) = json.get("payload") {
-                            if let Some(content) = payload.get("content").and_then(|c| c.as_str()) {
-                                let role = if msg_type == "user_message" { "User" } else { "Assistant" }.to_string();
-                                // Extract timestamp if available, otherwise use empty string
-                                let timestamp = payload
-                                    .get("timestamp")
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("--:--:--")
-                                    .to_string();
-                                messages.push((role, content.to_string(), timestamp));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+fn extract_recent_messages_with_timestamps(
+    path: &PathBuf,
+    limit: usize,
+) -> Vec<(String, String, String)> {
+    let ParsedSessionData { messages, .. } = collect_session_messages(path);
+    let dialog: Vec<&ParsedMessage> = messages
+        .iter()
+        .filter(|m| matches!(m.role.as_str(), "User" | "Assistant"))
+        .collect();
+    if dialog.is_empty() {
+        return Vec::new();
     }
 
-    // Keep only the last 'limit' messages
-    if messages.len() > limit {
-        messages.drain(0..messages.len() - limit);
-    }
-
-    messages
+    let start = dialog.len().saturating_sub(limit);
+    dialog[start..]
+        .iter()
+        .copied()
+        .map(|m| {
+            (
+                m.role.clone(),
+                m.content.clone(),
+                format_timestamp_for_display(m.timestamp.as_ref()),
+            )
+        })
+        .collect()
 }
 
 /// Format message blocks with vertical bar indicator (┃)
@@ -1321,15 +1693,23 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
     lines.push(Line::from(""));
     lines.push("SESSION PREVIEW - Recent Messages".bold().cyan().into());
     lines.push(Line::from(""));
-    lines.push(ansi_escape_line(&format!("Session: {}", session.id.as_str().cyan())));
-    lines.push(ansi_escape_line(&format!("Model: {}", session.model.as_str().yellow())));
+    lines.push(ansi_escape_line(&format!(
+        "Session: {}",
+        session.id.as_str().cyan()
+    )));
+    lines.push(ansi_escape_line(&format!(
+        "Model: {}",
+        session.model.as_str().yellow()
+    )));
     lines.push(Line::from(""));
-    lines.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    lines
+        .push(Line::from("────────────────────────────────────────────────────────────────").dim());
     lines.push(Line::from(""));
 
-    let messages = extract_recent_messages(&session.path, 5);
+    let mut messages = extract_recent_messages(&session.path, 5);
+    messages.retain(|(_, content)| !content.trim().is_empty());
     if messages.is_empty() {
-        lines.push("No messages found in this session.".yellow().into());
+        lines.push("Select a session to preview messages".dim().into());
     } else {
         for (idx, (role, content)) in messages.iter().enumerate() {
             // Role header
@@ -1340,22 +1720,23 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
             };
             lines.push(role_line.into());
 
-            // Message content - truncate long messages and wrap
-            let truncated = if content.len() > 200 {
-                format!("{}...", &content[..200])
-            } else {
-                content.clone()
-            };
+            let sanitized = truncate_unicode(&content.replace('\r', ""), 200);
+            let wrapped = crate::wrapping::word_wrap_lines(
+                &vec![Line::from(sanitized)],
+                crate::wrapping::RtOptions::new(FULL_PREVIEW_WRAP_WIDTH)
+                    .initial_indent("   ".into())
+                    .subsequent_indent("   ".into()),
+            );
 
-            // Split into lines and add with indentation
-            for msg_line in truncated.lines() {
-                lines.push(Line::from(format!("   {}", msg_line).dim()));
+            for line in wrapped {
+                lines.push(line.dim());
             }
             lines.push(Line::from(""));
         }
     }
 
-    lines.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    lines
+        .push(Line::from("────────────────────────────────────────────────────────────────").dim());
     lines.push(Line::from(""));
     lines.push("  q / Esc  Back to session list".dim().into());
     lines.push(Line::from(""));
@@ -1374,70 +1755,323 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
     Ok(Overlay::SessionPicker(picker_overlay))
 }
 
-/// Render the picker view based on current state
-pub fn render_picker_view(state: &PickerState) -> Result<Vec<Line<'static>>, String> {
-    let layout = SplitLayout::new(120, 30);
-    let mut content = Vec::new();
+/// Render the picker view directly into the provided frame.
+pub fn render_picker_view(frame: &mut crate::custom_terminal::Frame, state: &PickerState) {
+    let header_lines = build_header_lines(state);
+    let footer_lines = build_footer_lines(state);
+    let header_height = header_lines.len() as u16;
+    let footer_height = footer_lines.len() as u16;
 
-    // Add title bar
-    content.push("".into());
-    let title = format!(
-        "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions) │ Mode: {:?}",
-        state.sessions.len(),
-        state.view_mode
-    );
-    content.push(ansi_escape_line(&title).bold().cyan());
-    content.push("".into());
+    let mut constraints = Vec::new();
+    let mut header_index = None;
+    let mut footer_index = None;
+
+    if header_height > 0 {
+        header_index = Some(constraints.len());
+        constraints.push(Constraint::Length(header_height));
+    }
+
+    let body_index = constraints.len();
+    constraints.push(Constraint::Min(3));
+
+    if footer_height > 0 {
+        footer_index = Some(constraints.len());
+        constraints.push(Constraint::Length(footer_height));
+    }
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(frame.area());
+
+    if let Some(idx) = header_index {
+        Paragraph::new(header_lines).render(sections[idx], frame.buffer_mut());
+    }
+
+    render_body(frame, sections[body_index], state);
+
+    if let Some(idx) = footer_index {
+        Paragraph::new(footer_lines).render(sections[idx], frame.buffer_mut());
+    }
+}
+
+fn render_body(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &PickerState) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
 
     if state.sessions.is_empty() {
-        content.push("No sessions found in current working directory".yellow().into());
-        content.push("".into());
-        content.push("Press q to close".dim().into());
+        let lines = vec![
+            "No sessions found in current working directory"
+                .yellow()
+                .into(),
+            Line::from(""),
+            "Press q to close".dim().into(),
+        ];
+        Paragraph::new(lines).render(area, frame.buffer_mut());
+        return;
+    }
+
+    match state.view_mode {
+        ViewMode::Split => render_split_body(frame, area, state),
+        ViewMode::FullPreview => render_full_preview_body(frame, area, state),
+        ViewMode::SessionOnly => render_session_list_body(frame, area, state),
+    }
+}
+
+fn render_split_body(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &PickerState) {
+    if area.width <= 2 || area.height == 0 {
+        let fallback = state
+            .selected_session()
+            .map(|session| format_right_panel_preview(session, area.width))
+            .unwrap_or_else(|| vec!["Select a session to preview messages".dim().into()]);
+        Paragraph::new(fallback).render(area, frame.buffer_mut());
+        return;
+    }
+
+    let split = SplitLayout::new(area.width, area.height);
+    let regions = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(split.left_width),
+            Constraint::Length(split.gap),
+            Constraint::Length(split.right_width),
+        ])
+        .split(area);
+
+    let left_lines_full = format_left_panel_sessions_paginated(
+        state.current_page_sessions(),
+        state,
+        regions[0].width,
+    );
+    let left_visible = slice_left_panel_lines(&left_lines_full, regions[0].height as usize);
+    let left_border_style = if state.focus == FocusPane::LeftList {
+        Style::default().fg(Color::Cyan)
     } else {
-        match state.view_mode {
-            ViewMode::Split => {
-                // Render split view
-                content.extend(format_left_panel_sessions(&state.sessions, Some(state.selected_idx), layout.left_width));
-                content.push(Line::from(""));
-                content.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
-                content.push(Line::from(""));
+        Style::default()
+    };
+    Paragraph::new(left_visible)
+        .block(
+            Block::default()
+                .borders(Borders::RIGHT)
+                .border_style(left_border_style),
+        )
+        .render(regions[0], frame.buffer_mut());
 
-                if let Some(selected_session) = state.selected_session() {
-                    content.extend(format_right_panel_preview(selected_session, layout.right_width));
-                }
-            }
-            ViewMode::FullPreview => {
-                // Full screen preview of selected session
-                content.push("".into());
-                if let Some(selected_session) = state.selected_session() {
-                    content.extend(format_session_preview(selected_session));
-                }
-            }
-            ViewMode::SessionOnly => {
-                // Full screen session list
-                content.extend(format_left_panel_sessions(&state.sessions, Some(state.selected_idx), 120));
-            }
-        }
+    let right_width = regions[2].width.max(1);
+    let right_lines = state
+        .selected_session()
+        .map(|session| format_right_panel_preview(session, right_width))
+        .unwrap_or_else(|| vec!["Select a session to preview messages".dim().into()]);
+    let right_visible = slice_preview_lines(
+        right_lines,
+        regions[2].height as usize,
+        state.scroll_offset_right,
+    );
+    let right_border_style = if state.focus == FocusPane::RightPreview {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+    Paragraph::new(right_visible)
+        .block(
+            Block::default()
+                .borders(Borders::LEFT)
+                .border_style(right_border_style),
+        )
+        .render(regions[2], frame.buffer_mut());
+}
+
+fn render_full_preview_body(
+    frame: &mut crate::custom_terminal::Frame,
+    area: Rect,
+    state: &PickerState,
+) {
+    let lines = state
+        .selected_session()
+        .map(format_session_preview)
+        .unwrap_or_else(|| vec!["No session selected".yellow().into()]);
+    let offset = if state.focus == FocusPane::RightPreview {
+        state.scroll_offset_right
+    } else {
+        0
+    };
+    let visible = slice_preview_lines(lines, area.height as usize, offset);
+    Paragraph::new(visible).render(area, frame.buffer_mut());
+}
+
+fn render_session_list_body(
+    frame: &mut crate::custom_terminal::Frame,
+    area: Rect,
+    state: &PickerState,
+) {
+    let lines_full =
+        format_left_panel_sessions_paginated(state.current_page_sessions(), state, area.width);
+    let visible = slice_left_panel_lines(&lines_full, area.height as usize);
+    Paragraph::new(visible).render(area, frame.buffer_mut());
+}
+
+fn slice_left_panel_lines(lines: &[Line<'static>], height: usize) -> Vec<Line<'static>> {
+    if height == 0 || lines.is_empty() {
+        return Vec::new();
     }
 
-    // Modal overlay if active
+    if lines.len() <= height {
+        return lines.to_vec();
+    }
+
+    let header_count = lines.len().min(2);
+    let mut result: Vec<Line<'static>> = Vec::new();
+
+    let header_visible = header_count.min(height);
+    if header_visible > 0 {
+        result.extend_from_slice(&lines[..header_visible]);
+    }
+
+    let remaining_height = height.saturating_sub(header_visible);
+    if remaining_height == 0 {
+        return result;
+    }
+
+    let body = &lines[header_count..];
+    if body.is_empty() {
+        return result;
+    }
+
+    let focus = focus_line_index(body);
+    let body_slice = slice_lines_with_focus(body, remaining_height, focus);
+    result.extend(body_slice);
+    result
+}
+
+fn focus_line_index(lines: &[Line<'static>]) -> usize {
+    lines
+        .iter()
+        .position(|line| line_has_reverse(line))
+        .unwrap_or(0)
+}
+
+fn line_has_reverse(line: &Line<'static>) -> bool {
+    if line.style.add_modifier.contains(Modifier::REVERSED) {
+        return true;
+    }
+    line.spans
+        .iter()
+        .any(|span| span.style.add_modifier.contains(Modifier::REVERSED))
+}
+
+fn slice_lines_with_focus(
+    lines: &[Line<'static>],
+    height: usize,
+    focus_line: usize,
+) -> Vec<Line<'static>> {
+    if height == 0 || lines.is_empty() {
+        return Vec::new();
+    }
+
+    if lines.len() <= height {
+        return lines.to_vec();
+    }
+
+    let focus = focus_line.min(lines.len().saturating_sub(1));
+    let mut start = focus.saturating_sub(height / 2);
+    if start + height > lines.len() {
+        start = lines.len() - height;
+    }
+    let end = start + height;
+    lines[start..end].to_vec()
+}
+
+fn slice_preview_lines(
+    lines: Vec<Line<'static>>,
+    height: usize,
+    offset: usize,
+) -> Vec<Line<'static>> {
+    if height == 0 {
+        return Vec::new();
+    }
+    if lines.len() <= height {
+        return lines;
+    }
+
+    let max_offset = lines.len().saturating_sub(height);
+    let start = offset.min(max_offset);
+    lines.into_iter().skip(start).take(height).collect()
+}
+
+fn truncate_unicode(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{}...", truncated)
+}
+
+fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    copy_to_clipboard_impl(text)
+}
+
+#[cfg(not(target_os = "android"))]
+fn copy_to_clipboard_impl(text: &str) -> Result<(), String> {
+    let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
+fn copy_to_clipboard_impl(_: &str) -> Result<(), String> {
+    Err("Clipboard is not supported on this platform".to_string())
+}
+
+fn build_header_lines(state: &PickerState) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+    let focus_label = match state.focus {
+        FocusPane::LeftList => "Left",
+        FocusPane::RightPreview => "Preview",
+    };
+    let title = format!(
+        "    C X R E S U M E   S E S S I O N   P I C K E R    ({session_count} sessions) │ Mode: {mode:?} │ Focus: {focus}",
+        session_count = state.sessions.len(),
+        mode = state.view_mode,
+        focus = focus_label
+    );
+    lines.push(ansi_escape_line(&title).bold().cyan());
+    lines.push(Line::from(""));
+    lines
+}
+
+fn build_footer_lines(state: &PickerState) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
     if state.modal_active {
-        content.push(Line::from(""));
-        content.push(Line::from("╔════════════════════════════════════════════════════════════╗").dim());
+        lines.push(
+            Line::from("╔════════════════════════════════════════════════════════════╗").dim(),
+        );
         for line in state.modal_message.lines() {
-            content.push(ansi_escape_line(&format!("║ {} ", line)).dim());
+            lines.push(ansi_escape_line(&format!("║ {line} ")).dim());
         }
-        content.push(Line::from("╚════════════════════════════════════════════════════════════╝").dim());
+        lines.push(
+            Line::from("╚════════════════════════════════════════════════════════════╝").dim(),
+        );
+        lines.push(Line::from(""));
     }
 
-    // Add footer with instructions
-    content.push(Line::from(""));
-    content.push(Line::from("────────────────────────────────────────────────────────────────").dim());
-    content.push("Keyboard Shortcuts:".bold().into());
-    content.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
-    content.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
-    content.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
-    content.push(Line::from(""));
-
-    Ok(content)
+    lines
+        .push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    lines.push(Line::from("Keyboard Shortcuts:").bold());
+    lines.push(ansi_escape_line(
+        "  ↑↓      Navigate sessions       Page↑/↓  Page jump       ←→      Switch focus",
+    ));
+    lines.push(ansi_escape_line(
+        "  Enter   Resume session         d      Delete              f        Full preview",
+    ));
+    lines.push(ansi_escape_line(
+        "  n       New session            c      Copy ID             q/Esc    Close",
+    ));
+    lines.push(Line::from(""));
+    lines
 }

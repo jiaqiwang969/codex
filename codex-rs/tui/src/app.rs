@@ -174,6 +174,31 @@ impl App {
         })
     }
 
+    fn open_or_refresh_session_picker(&mut self, tui: &mut tui::Tui) {
+        if let Some(Overlay::SessionPicker(picker)) = self.overlay.as_mut() {
+            if let Err(err) = picker.refresh_sessions() {
+                self.chat_widget
+                    .add_error_message(format!("Failed to refresh sessions: {err}"));
+                tracing::warn!("Failed to refresh session picker: {}", err);
+            }
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+
+        match crate::cxresume_picker_widget::create_session_picker_overlay() {
+            Ok(overlay) => {
+                let _ = tui.enter_alt_screen();
+                self.overlay = Some(overlay);
+                tui.frame_requester().schedule_frame();
+            }
+            Err(err) => {
+                self.chat_widget
+                    .add_error_message(format!("Failed to load sessions: {err}"));
+                tracing::warn!("Failed to create session picker: {}", err);
+            }
+        }
+    }
+
     pub(crate) async fn handle_tui_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -231,6 +256,14 @@ impl App {
                 };
                 self.chat_widget = ChatWidget::new(init, self.server.clone());
                 tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ResumeSession(path) => {
+                if let Err(err) = self.resume_session_from_rollout(tui, path.clone()).await {
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to resume session from {}: {err}",
+                        path.display()
+                    ));
+                }
             }
             AppEvent::InsertHistoryCell(cell) => {
                 let cell: Arc<dyn HistoryCell> = cell.into();
@@ -408,6 +441,40 @@ impl App {
         self.chat_widget.token_usage()
     }
 
+    async fn resume_session_from_rollout(
+        &mut self,
+        tui: &mut tui::Tui,
+        path: PathBuf,
+    ) -> Result<()> {
+        let resumed = self
+            .server
+            .resume_conversation_from_rollout(
+                self.config.clone(),
+                path.clone(),
+                self.auth_manager.clone(),
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to resume session from {}", path.display()))?;
+
+        let init = crate::chatwidget::ChatWidgetInit {
+            config: self.config.clone(),
+            frame_requester: tui.frame_requester(),
+            app_event_tx: self.app_event_tx.clone(),
+            initial_prompt: None,
+            initial_images: Vec::new(),
+            enhanced_keys_supported: self.enhanced_keys_supported,
+            auth_manager: self.auth_manager.clone(),
+        };
+
+        self.chat_widget =
+            ChatWidget::new_from_existing(init, resumed.conversation, resumed.session_configured);
+        self.transcript_cells.clear();
+        self.deferred_history_lines.clear();
+        self.has_emitted_history_lines = false;
+        tui.frame_requester().schedule_frame();
+        Ok(())
+    }
+
     fn on_update_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {
         self.chat_widget.set_reasoning_effort(effort);
         self.config.model_reasoning_effort = effort;
@@ -459,36 +526,12 @@ impl App {
                 }
             }
             KeyEvent {
-                code: KeyCode::Char('x'),
+                code: KeyCode::Char(c),
                 modifiers: crossterm::event::KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press,
                 ..
-            } => {
-                // Show cxresume session picker for current working directory
-                match crate::cxresume_picker_widget::create_session_picker_overlay() {
-                    Ok(overlay) => {
-                        let _ = tui.enter_alt_screen();
-                        self.overlay = Some(overlay);
-                        tui.frame_requester().schedule_frame();
-                    }
-                    Err(err) => {
-                        // Show error message to user via overlay
-                        let error_lines = vec![
-                            "Failed to load sessions:".red().into(),
-                            Line::from(""),
-                            err.clone().dim().into(),
-                            Line::from(""),
-                            "Make sure cxresume is installed and there are sessions in ~/.codex/sessions".italic().into(),
-                        ];
-                        let _ = tui.enter_alt_screen();
-                        self.overlay = Some(Overlay::new_static_with_title(
-                            error_lines,
-                            "C X R E S U M E   E R R O R".to_string(),
-                        ));
-                        tui.frame_requester().schedule_frame();
-                        tracing::warn!("Failed to create session picker: {}", err);
-                    }
-                }
+            } if matches!(c, 'x' | 'q') => {
+                self.open_or_refresh_session_picker(tui);
             }
             // Esc primes/advances backtracking only in normal (not working) mode
             // with an empty composer. In any other state, forward Esc so the
@@ -666,5 +709,31 @@ mod tests {
         let (_, nth, prefill) = app.backtrack.pending.clone().expect("pending backtrack");
         assert_eq!(nth, 1);
         assert_eq!(prefill, "follow-up (edited)");
+    }
+}
+impl App {
+    fn open_or_refresh_session_picker(&mut self, tui: &mut tui::Tui) {
+        if let Some(Overlay::SessionPicker(picker)) = self.overlay.as_mut() {
+            if let Err(err) = picker.refresh_sessions() {
+                self.chat_widget
+                    .add_error_message(format!("Failed to refresh sessions: {err}"));
+                tracing::warn!("Failed to refresh session picker: {}", err);
+            }
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+
+        match crate::cxresume_picker_widget::create_session_picker_overlay() {
+            Ok(overlay) => {
+                let _ = tui.enter_alt_screen();
+                self.overlay = Some(overlay);
+                tui.frame_requester().schedule_frame();
+            }
+            Err(err) => {
+                self.chat_widget
+                    .add_error_message(format!("Failed to load sessions: {err}"));
+                tracing::warn!("Failed to create session picker: {}", err);
+            }
+        }
     }
 }

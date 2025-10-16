@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::app::App;
+use crate::app_event::AppEvent;
+use crate::cxresume_picker_widget::SessionInfo;
+use crate::cxresume_picker_widget::{self};
 use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
@@ -14,6 +17,8 @@ use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
+use tracing::warn;
 
 /// Aggregates all backtrack-related state used by the App.
 #[derive(Default)]
@@ -40,6 +45,19 @@ impl App {
         tui: &mut tui::Tui,
         event: TuiEvent,
     ) -> Result<bool> {
+        if let TuiEvent::Key(KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            ..
+        }) = event
+        {
+            if matches!(c, 'x' | 'q') {
+                self.open_or_refresh_session_picker(tui);
+                return Ok(true);
+            }
+        }
+
         if self.backtrack.overlay_preview_active {
             match event {
                 TuiEvent::Key(KeyEvent {
@@ -130,6 +148,32 @@ impl App {
         }
     }
 
+    pub(crate) fn close_session_picker(
+        &mut self,
+        tui: &mut tui::Tui,
+        selection_id: Option<String>,
+        session: Option<SessionInfo>,
+    ) -> Result<()> {
+        let _ = tui.leave_alt_screen();
+        if !self.deferred_history_lines.is_empty() {
+            let lines = std::mem::take(&mut self.deferred_history_lines);
+            tui.insert_history_lines(lines);
+        }
+        self.overlay = None;
+        self.backtrack.overlay_preview_active = false;
+        if let Some(id) = selection_id {
+            if id == cxresume_picker_widget::NEW_SESSION_SENTINEL {
+                self.app_event_tx.send(AppEvent::NewSession);
+            } else if let Some(info) = session {
+                self.app_event_tx
+                    .send(AppEvent::ResumeSession(info.path.clone()));
+            } else {
+                warn!("Selected session id {id} has no metadata");
+            }
+        }
+        Ok(())
+    }
+
     /// Re-render the full transcript into the terminal scrollback in one call.
     /// Useful when switching sessions to ensure prior history remains visible.
     pub(crate) fn render_transcript_once(&mut self, tui: &mut tui::Tui) {
@@ -210,13 +254,38 @@ impl App {
 
     /// Forward any event to the overlay and close it if done.
     fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
-        if let Some(overlay) = &mut self.overlay {
+        enum OverlayCloseAction {
+            Session {
+                id: Option<String>,
+                session: Option<SessionInfo>,
+            },
+            Other,
+        }
+
+        let mut close_action = None;
+        if let Some(overlay) = self.overlay.as_mut() {
             overlay.handle_event(tui, event)?;
             if overlay.is_done() {
-                self.close_transcript_overlay(tui);
-                tui.frame_requester().schedule_frame();
+                close_action = Some(match overlay {
+                    Overlay::SessionPicker(_) => OverlayCloseAction::Session {
+                        id: overlay.get_selected_session_id(),
+                        session: overlay.get_selected_session(),
+                    },
+                    _ => OverlayCloseAction::Other,
+                });
             }
         }
+
+        if let Some(action) = close_action {
+            match action {
+                OverlayCloseAction::Session { id, session } => {
+                    self.close_session_picker(tui, id, session)?;
+                }
+                OverlayCloseAction::Other => self.close_transcript_overlay(tui),
+            }
+            tui.frame_requester().schedule_frame();
+        }
+
         Ok(())
     }
 

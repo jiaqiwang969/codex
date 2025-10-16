@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::cxresume_picker_widget::SessionInfo;
 use crate::history_cell::HistoryCell;
 use crate::render::line_utils::push_owned_lines;
 use crate::tui;
@@ -35,6 +36,7 @@ pub(crate) struct SessionPickerOverlay {
     picker_state: crate::cxresume_picker_widget::PickerState,
     is_done: bool,
     selected_session_id: Option<String>,
+    selected_session: Option<SessionInfo>,
 }
 
 impl Overlay {
@@ -152,6 +154,13 @@ impl Overlay {
     pub(crate) fn get_selected_session_id(&self) -> Option<String> {
         match self {
             Overlay::SessionPicker(o) => o.selected_session_id.clone(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn get_selected_session(&self) -> Option<SessionInfo> {
+        match self {
+            Overlay::SessionPicker(o) => o.selected_session_info(),
             _ => None,
         }
     }
@@ -2119,32 +2128,45 @@ mod tests {
 
 impl SessionPickerOverlay {
     /// Create a new session picker overlay from loaded sessions
-    pub(crate) fn new(
-        sessions: Vec<crate::cxresume_picker_widget::SessionInfo>,
-    ) -> Self {
+    pub(crate) fn new(sessions: Vec<crate::cxresume_picker_widget::SessionInfo>) -> Self {
         let picker_state = crate::cxresume_picker_widget::PickerState::new(sessions);
         Self {
             picker_state,
             is_done: false,
             selected_session_id: None,
+            selected_session: None,
         }
+    }
+
+    pub(crate) fn refresh_sessions(&mut self) -> std::result::Result<(), String> {
+        let sessions = crate::cxresume_picker_widget::get_cwd_sessions()?;
+        self.picker_state.reload_sessions(sessions);
+        self.is_done = false;
+        self.selected_session_id = None;
+        self.selected_session = None;
+        Ok(())
     }
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) => {
                 // Convert KeyCode to PickerEvent using the static method
-                if let Some(picker_event) =
-                    crate::cxresume_picker_widget::PickerState::key_to_event(key_event.code)
-                {
+                if let Some(picker_event) = self.picker_state.key_to_event(key_event.code) {
                     // Handle the picker event and get optional session ID
                     if let Some(session_id) = self.picker_state.handle_event(picker_event) {
                         if session_id.is_empty() {
                             // Empty string signals exit
+                            self.selected_session_id = None;
+                            self.selected_session = None;
+                            self.is_done = true;
+                        } else if session_id == crate::cxresume_picker_widget::NEW_SESSION_SENTINEL
+                        {
+                            self.selected_session_id = Some(session_id);
+                            self.selected_session = None;
                             self.is_done = true;
                         } else {
-                            // Non-empty string is the selected session ID
                             self.selected_session_id = Some(session_id);
+                            self.selected_session = self.picker_state.selected_session().cloned();
                             self.is_done = true;
                         }
                     }
@@ -2156,12 +2178,7 @@ impl SessionPickerOverlay {
             TuiEvent::Draw => {
                 // Render the picker view
                 tui.draw(u16::MAX, |frame| {
-                    // Use the render_picker_view function to generate lines
-                    if let Ok(lines) = crate::cxresume_picker_widget::render_picker_view(&self.picker_state) {
-                        let area = frame.area();
-                        use ratatui::widgets::{Paragraph, Widget};
-                        Paragraph::new(lines).render(area, frame.buffer_mut());
-                    }
+                    crate::cxresume_picker_widget::render_picker_view(frame, &self.picker_state);
                 })?;
                 Ok(())
             }
@@ -2171,5 +2188,9 @@ impl SessionPickerOverlay {
 
     pub(crate) fn is_done(&self) -> bool {
         self.is_done
+    }
+
+    pub(crate) fn selected_session_info(&self) -> Option<SessionInfo> {
+        self.selected_session.clone()
     }
 }
