@@ -144,6 +144,11 @@ impl CacheLayer {
         );
     }
 
+    /// Remove a specific preview from cache
+    pub fn remove_preview(&mut self, session_id: &str) {
+        self.preview_cache.remove(session_id);
+    }
+
     /// Clear all caches (useful for refresh operations)
     pub fn clear(&mut self) {
         self.meta_cache.clear();
@@ -480,13 +485,35 @@ pub enum PickerEvent {
 
 impl PickerState {
     /// Handle a picker event and update state accordingly
+    /// Returns Some(session_id) when: (1) session to resume, (2) session to delete (empty string = exit)
     pub fn handle_event(&mut self, event: PickerEvent) -> Option<String> {
         if self.modal_active {
             // In modal mode, only handle confirm/cancel
             match event {
                 PickerEvent::ConfirmAction => {
-                    self.modal_active = false;
-                    // Would return Some(session_id) for delete confirmation
+                    // Confirm delete: remove session file and from list
+                    if let Some(session) = self.sessions.get(self.selected_idx) {
+                        let session_id = session.id.clone();
+                        let session_path = session.path.clone();
+                        self.modal_active = false;
+
+                        // Remove from sessions list
+                        self.sessions.remove(self.selected_idx);
+
+                        // Adjust selected index if needed
+                        if self.selected_idx >= self.sessions.len() && self.selected_idx > 0 {
+                            self.selected_idx -= 1;
+                        }
+
+                        // Update pagination total
+                        self.pagination.total_items = self.sessions.len();
+
+                        // Delete the file
+                        let _ = fs::remove_file(&session_path);
+
+                        // Clear cache entries for this session
+                        self.cache.remove_preview(&session_id);
+                    }
                 }
                 PickerEvent::CancelAction => {
                     self.close_modal();
