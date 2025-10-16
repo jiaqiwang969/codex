@@ -2,107 +2,167 @@ use crate::pager_overlay::Overlay;
 use codex_ansi_escape::ansi_escape_line;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use std::process::Command;
+use std::fs;
+use std::io::BufRead;
+use std::path::PathBuf;
 
-/// Session metadata extracted from cxresume
+/// Session metadata
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
     pub id: String,
     #[allow(dead_code)]
-    pub path: String,
+    pub path: PathBuf,
     #[allow(dead_code)]
     pub cwd: String,
-    #[allow(dead_code)]
-    pub messages_count: u32,
-    #[allow(dead_code)]
-    pub last_role: String,
     pub age: String,
+    #[allow(dead_code)]
+    pub mtime: u64,
 }
 
-/// Run `cxresume cwd` to get sessions in the current working directory
-/// Returns a list of available sessions
-pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
-    // Try to get sessions via cxresume cwd
-    let output = Command::new("cxresume")
-        .arg("cwd")
-        .output()
-        .map_err(|e| format!("Failed to execute cxresume: {}", e))?;
-
-    if !output.status.success() {
-        // Fallback to plain --list if cwd mode fails
-        let fallback = Command::new("cxresume")
-            .arg("--list")
-            .output()
-            .map_err(|e| format!("Failed to list sessions: {}", e))?;
-
-        if !fallback.status.success() {
-            return Err("No sessions found".to_string());
-        }
-
-        return parse_session_list(&String::from_utf8_lossy(&fallback.stdout));
-    }
-
-    parse_session_list(&String::from_utf8_lossy(&output.stdout))
+/// Get current working directory
+fn get_cwd() -> Result<PathBuf, String> {
+    std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))
 }
 
-fn parse_session_list(output: &str) -> Result<Vec<SessionInfo>, String> {
-    let mut sessions = Vec::new();
+/// Get sessions directory
+fn get_sessions_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| format!("Failed to get HOME: {}", e))?;
+    Ok(PathBuf::from(home).join(".codex/sessions"))
+}
 
-    // Parse cxresume output format:
-    // - session-id (timestamp)
-    for line in output.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with("Found") || line.starts_with("No session") {
-            continue;
-        }
+/// Extract session metadata from .jsonl file
+fn extract_session_meta(path: &PathBuf) -> Result<(String, String), String> {
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let reader = std::io::BufReader::new(file);
+    let mut lines = reader.lines();
 
-        // Try to parse: - <session-id> (timestamp)
-        if line.starts_with("- ") {
-            let parts: Vec<&str> = line[2..].split(" (").collect();
-            if parts.len() >= 1 {
-                let id = parts[0].trim().to_string();
-                let age = if parts.len() > 1 {
-                    parts[1].trim_end_matches(")").to_string()
-                } else {
-                    "unknown".to_string()
-                };
+    if let Some(Ok(first_line)) = lines.next() {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&first_line) {
+            // Try to extract session ID and CWD from session_meta
+            if let Some(payload) = json.get("payload") {
+                let id = payload
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| path.file_name().unwrap().to_string_lossy().to_string());
 
-                sessions.push(SessionInfo {
-                    id: id.clone(),
-                    path: id.clone(),
-                    cwd: String::new(),
-                    messages_count: 0,
-                    last_role: "unknown".to_string(),
-                    age,
-                });
+                let cwd = payload
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+
+                return Ok((id, cwd));
             }
         }
     }
 
-    if sessions.is_empty() {
-        Err("No sessions found in current directory".to_string())
+    // Fallback: use filename as ID
+    let id = path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    Ok((id, String::new()))
+}
+
+/// Format relative time
+fn format_relative_time(mtime: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let diff = now.saturating_sub(mtime);
+    let s = diff;
+
+    if s < 60 {
+        format!("{}s ago", s)
+    } else if s < 3600 {
+        format!("{}m ago", s / 60)
+    } else if s < 86400 {
+        format!("{}h ago", s / 3600)
+    } else if s < 604800 {
+        format!("{}d ago", s / 86400)
+    } else if s < 2592000 {
+        format!("{}w ago", s / 604800)
+    } else if s < 31536000 {
+        format!("{}mo ago", s / 2592000)
     } else {
-        Ok(sessions)
+        format!("{}y ago", s / 31536000)
     }
 }
 
-/// Resume a session by ID
-#[allow(dead_code)]
-pub fn resume_session(_session_id: &str) -> Result<(), String> {
-    let output = Command::new("cxresume")
-        .arg("cwd")
-        .arg("-l")
-        .output()
-        .map_err(|e| format!("Failed to resume session: {}", e))?;
+/// Get sessions in current working directory
+pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
+    let cwd = get_cwd()?;
+    let sessions_dir = get_sessions_dir()?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "Resume failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    let cwd_str = cwd.to_string_lossy().to_string();
+
+    // Recursively find all .jsonl files
+    let mut sessions = Vec::new();
+
+    fn find_sessions(
+        dir: &PathBuf,
+        cwd: &str,
+        sessions: &mut Vec<SessionInfo>,
+        max_depth: u32,
+    ) -> Result<(), String> {
+        if max_depth == 0 {
+            return Ok(());
+        }
+
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().map_or(false, |ext| ext == "jsonl") {
+                        if let Ok((id, session_cwd)) = extract_session_meta(&path) {
+                            // Filter by current working directory
+                            if session_cwd.is_empty() || session_cwd == cwd {
+                                let mtime = entry
+                                    .metadata()
+                                    .ok()
+                                    .and_then(|m| m.modified().ok())
+                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+
+                                let age = format_relative_time(mtime);
+
+                                sessions.push(SessionInfo {
+                                    id,
+                                    path: path.clone(),
+                                    cwd: session_cwd,
+                                    age,
+                                    mtime,
+                                });
+                            }
+                        }
+                    } else if path.is_dir() {
+                        let _ = find_sessions(&path, cwd, sessions, max_depth - 1);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
-    Ok(())
+    find_sessions(&sessions_dir, &cwd_str, &mut sessions, 4)?;
+
+    // Sort by modification time (newest first)
+    sessions.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+
+    // Limit to recent 50 sessions for performance
+    sessions.truncate(50);
+
+    if sessions.is_empty() {
+        Err("No sessions found in current working directory".to_string())
+    } else {
+        Ok(sessions)
+    }
 }
 
 /// Format session information for display with colors
@@ -148,7 +208,7 @@ fn format_help_section() -> Vec<Line<'static>> {
         ansi_escape_line("  r         Refresh session list   q / Esc  Close this panel"),
         Line::from(""),
         "Additional Actions:".bold().into(),
-        ansi_escape_line("  • Use cxresume command directly for advanced options"),
+        ansi_escape_line("  • Use cxresume command for CLI-based selection"),
         ansi_escape_line("  • Sessions are stored in ~/.codex/sessions"),
         Line::from(""),
         Line::from("────────────────────────────────────────────────────────────────").dim(),
@@ -210,9 +270,9 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
                     format!("Details: {}", e).dim().into(),
                     "".into(),
                     "Troubleshooting:".bold().into(),
-                    "  • Ensure cxresume is installed: npm install -g cxresume".dim().into(),
                     "  • Check ~/.codex/sessions directory exists".dim().into(),
                     "  • Verify you have write permissions".dim().into(),
+                    "  • Sessions are stored under ~/.codex/sessions/YYYY/MM/DD/".dim().into(),
                     "".into(),
                 ];
                 error_lines.extend(format_help_section());
