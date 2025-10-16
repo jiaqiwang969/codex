@@ -61,6 +61,124 @@ impl SplitLayout {
     }
 }
 
+/// View mode for the picker
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Split,        // Dual-panel view (default)
+    FullPreview,  // Full-screen message preview
+    SessionOnly,  // Full-screen session list
+}
+
+/// State management for the session picker
+#[derive(Debug, Clone)]
+pub struct PickerState {
+    pub sessions: Vec<SessionInfo>,
+    pub selected_idx: usize,
+    pub scroll_offset_left: usize,      // For left panel scrolling
+    pub scroll_offset_right: usize,     // For right panel scrolling
+    pub current_page: usize,            // For pagination
+    pub view_mode: ViewMode,
+    pub modal_active: bool,             // Delete or edit confirmation dialog
+    pub modal_message: String,          // Message to display in modal
+}
+
+impl PickerState {
+    /// Create a new picker state from sessions list
+    pub fn new(sessions: Vec<SessionInfo>) -> Self {
+        PickerState {
+            sessions,
+            selected_idx: 0,
+            scroll_offset_left: 0,
+            scroll_offset_right: 0,
+            current_page: 0,
+            view_mode: ViewMode::Split,
+            modal_active: false,
+            modal_message: String::new(),
+        }
+    }
+
+    /// Get currently selected session
+    pub fn selected_session(&self) -> Option<&SessionInfo> {
+        self.sessions.get(self.selected_idx)
+    }
+
+    /// Move selection up
+    pub fn select_prev(&mut self) {
+        if self.selected_idx > 0 {
+            self.selected_idx -= 1;
+            self.scroll_offset_right = 0; // Reset preview scroll
+        }
+    }
+
+    /// Move selection down
+    pub fn select_next(&mut self) {
+        if self.selected_idx < self.sessions.len().saturating_sub(1) {
+            self.selected_idx += 1;
+            self.scroll_offset_right = 0; // Reset preview scroll
+        }
+    }
+
+    /// Jump to first session
+    pub fn select_first(&mut self) {
+        self.selected_idx = 0;
+        self.scroll_offset_right = 0;
+    }
+
+    /// Jump to last session
+    pub fn select_last(&mut self) {
+        self.selected_idx = self.sessions.len().saturating_sub(1);
+        self.scroll_offset_right = 0;
+    }
+
+    /// Page up (jump 5 items)
+    pub fn page_prev(&mut self) {
+        self.selected_idx = self.selected_idx.saturating_sub(5);
+        self.scroll_offset_right = 0;
+    }
+
+    /// Page down (jump 5 items)
+    pub fn page_next(&mut self) {
+        self.selected_idx = (self.selected_idx + 5).min(self.sessions.len().saturating_sub(1));
+        self.scroll_offset_right = 0;
+    }
+
+    /// Scroll preview up
+    pub fn scroll_preview_up(&mut self) {
+        self.scroll_offset_right = self.scroll_offset_right.saturating_sub(1);
+    }
+
+    /// Scroll preview down
+    pub fn scroll_preview_down(&mut self) {
+        self.scroll_offset_right = self.scroll_offset_right.saturating_add(1);
+    }
+
+    /// Toggle view mode
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Split => ViewMode::FullPreview,
+            ViewMode::FullPreview => ViewMode::SessionOnly,
+            ViewMode::SessionOnly => ViewMode::Split,
+        };
+    }
+
+    /// Open delete confirmation modal
+    pub fn confirm_delete(&mut self) {
+        if let Some(session) = self.sessions.get(self.selected_idx) {
+            self.modal_active = true;
+            self.modal_message = format!(
+                "Delete session '{}'?\nThis action cannot be undone.\n\nPress 'y' to confirm or 'n' to cancel.",
+                session.id
+            );
+        }
+    }
+
+    /// Close any active modal
+    pub fn close_modal(&mut self) {
+        self.modal_active = false;
+        self.modal_message.clear();
+    }
+}
+
 /// Get current working directory
 fn get_cwd() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))
@@ -667,90 +785,16 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
 /// Create a comprehensive Split View session picker overlay
 pub fn create_session_picker_overlay() -> Result<Overlay, String> {
     let sessions = get_cwd_sessions()?;
+    let state = PickerState::new(sessions);
 
-    // Estimate dimensions for layout (will be adjusted at render time)
-    let layout = SplitLayout::new(120, 30);
-
-    let mut content = Vec::new();
-
-    // Add title bar
-    content.push("".into());
-    let title = format!(
-        "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions)",
-        sessions.len()
-    );
-    content.push(ansi_escape_line(&title).bold().cyan());
-    content.push("".into());
-
-    if sessions.is_empty() {
-        content.push("No sessions found in current working directory".yellow().into());
-        content.push("".into());
-        content.push("Press q to close".dim().into());
-    } else {
-        // Show first session as default selected
-        let selected_idx = 0;
-
-        // Split layout visualization: left panel (sessions list) + right panel (preview)
-        // We'll show them side by side by creating the left panel content
-        content.extend(format_left_panel_sessions(&sessions, Some(selected_idx), layout.left_width));
-
-        // Add a visual separator
-        content.push(Line::from(""));
-        content.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
-        content.push(Line::from(""));
-
-        // Show preview for selected session
-        if let Some(selected_session) = sessions.get(selected_idx) {
-            content.extend(format_right_panel_preview(selected_session, layout.right_width));
-        }
-    }
-
-    // Add footer with instructions
-    content.push(Line::from(""));
-    content.push(Line::from("────────────────────────────────────────────────────────────────").dim());
-    content.push("Keyboard Shortcuts:".bold().into());
-    content.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
-    content.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
-    content.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
-    content.push(Line::from(""));
+    // Render with initial state
+    let content = render_picker_view(&state)?;
 
     let refresh_callback = Box::new(|| {
         match get_cwd_sessions() {
             Ok(sessions) => {
-                let layout = SplitLayout::new(120, 30);
-                let mut result = Vec::new();
-
-                result.push("".into());
-                let title = format!(
-                    "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions)",
-                    sessions.len()
-                );
-                result.push(ansi_escape_line(&title).bold().cyan());
-                result.push("".into());
-
-                if !sessions.is_empty() {
-                    let selected_idx = 0;
-                    result.extend(format_left_panel_sessions(&sessions, Some(selected_idx), layout.left_width));
-                    result.push(Line::from(""));
-                    result.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
-                    result.push(Line::from(""));
-
-                    if let Some(selected_session) = sessions.get(selected_idx) {
-                        result.extend(format_right_panel_preview(selected_session, layout.right_width));
-                    }
-                } else {
-                    result.push("No sessions available".yellow().into());
-                }
-
-                result.push(Line::from(""));
-                result.push(Line::from("────────────────────────────────────────────────────────────────").dim());
-                result.push("Keyboard Shortcuts:".bold().into());
-                result.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
-                result.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
-                result.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
-                result.push(Line::from(""));
-
-                Ok(result)
+                let state = PickerState::new(sessions);
+                render_picker_view(&state)
             }
             Err(e) => {
                 let mut error_lines = vec![
@@ -778,4 +822,72 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
             .to_string(),
         refresh_callback,
     ))
+}
+
+/// Render the picker view based on current state
+fn render_picker_view(state: &PickerState) -> Result<Vec<Line<'static>>, String> {
+    let layout = SplitLayout::new(120, 30);
+    let mut content = Vec::new();
+
+    // Add title bar
+    content.push("".into());
+    let title = format!(
+        "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions) │ Mode: {:?}",
+        state.sessions.len(),
+        state.view_mode
+    );
+    content.push(ansi_escape_line(&title).bold().cyan());
+    content.push("".into());
+
+    if state.sessions.is_empty() {
+        content.push("No sessions found in current working directory".yellow().into());
+        content.push("".into());
+        content.push("Press q to close".dim().into());
+    } else {
+        match state.view_mode {
+            ViewMode::Split => {
+                // Render split view
+                content.extend(format_left_panel_sessions(&state.sessions, Some(state.selected_idx), layout.left_width));
+                content.push(Line::from(""));
+                content.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
+                content.push(Line::from(""));
+
+                if let Some(selected_session) = state.selected_session() {
+                    content.extend(format_right_panel_preview(selected_session, layout.right_width));
+                }
+            }
+            ViewMode::FullPreview => {
+                // Full screen preview of selected session
+                content.push("".into());
+                if let Some(selected_session) = state.selected_session() {
+                    content.extend(format_session_preview(selected_session));
+                }
+            }
+            ViewMode::SessionOnly => {
+                // Full screen session list
+                content.extend(format_left_panel_sessions(&state.sessions, Some(state.selected_idx), 120));
+            }
+        }
+    }
+
+    // Modal overlay if active
+    if state.modal_active {
+        content.push(Line::from(""));
+        content.push(Line::from("╔════════════════════════════════════════════════════════════╗").dim());
+        for line in state.modal_message.lines() {
+            content.push(ansi_escape_line(&format!("║ {} ", line)).dim());
+        }
+        content.push(Line::from("╚════════════════════════════════════════════════════════════╝").dim());
+    }
+
+    // Add footer with instructions
+    content.push(Line::from(""));
+    content.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    content.push("Keyboard Shortcuts:".bold().into());
+    content.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
+    content.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
+    content.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
+    content.push(Line::from(""));
+
+    Ok(content)
 }
