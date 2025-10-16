@@ -179,6 +179,139 @@ impl PickerState {
     }
 }
 
+/// Event type enum for picker keyboard input
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerEvent {
+    // Navigation
+    SelectNext,
+    SelectPrev,
+    SelectFirst,
+    SelectLast,
+    PageNext,
+    PagePrev,
+
+    // Preview scrolling
+    ScrollUp,
+    ScrollDown,
+
+    // Actions
+    Resume,           // Enter key - return selected session
+    Delete,           // d key - confirm delete
+    ToggleViewMode,   // f key - cycle through views
+    CopySessionId,    // c key - copy to clipboard
+    NewSession,       // n key - create new
+
+    // Navigation modes
+    CycleViewMode,    // f key - Split → FullPreview → SessionOnly → Split
+    Refresh,          // r key - refresh sessions list
+
+    // Dialog control
+    ConfirmAction,    // y key in modal
+    CancelAction,     // n key in modal
+
+    // Exit
+    Exit,             // q or Esc
+}
+
+impl PickerState {
+    /// Handle a picker event and update state accordingly
+    pub fn handle_event(&mut self, event: PickerEvent) -> Option<String> {
+        if self.modal_active {
+            // In modal mode, only handle confirm/cancel
+            match event {
+                PickerEvent::ConfirmAction => {
+                    self.modal_active = false;
+                    // Would return Some(session_id) for delete confirmation
+                }
+                PickerEvent::CancelAction => {
+                    self.close_modal();
+                }
+                _ => {}
+            }
+            return None;
+        }
+
+        // Normal mode event handling
+        match event {
+            PickerEvent::SelectNext => self.select_next(),
+            PickerEvent::SelectPrev => self.select_prev(),
+            PickerEvent::SelectFirst => self.select_first(),
+            PickerEvent::SelectLast => self.select_last(),
+            PickerEvent::PageNext => self.page_next(),
+            PickerEvent::PagePrev => self.page_prev(),
+
+            PickerEvent::ScrollUp => self.scroll_preview_up(),
+            PickerEvent::ScrollDown => self.scroll_preview_down(),
+
+            PickerEvent::ToggleViewMode | PickerEvent::CycleViewMode => {
+                self.toggle_view_mode();
+            }
+
+            PickerEvent::Resume => {
+                if let Some(session) = self.selected_session() {
+                    return Some(session.id.clone());
+                }
+            }
+
+            PickerEvent::Delete => {
+                self.confirm_delete();
+            }
+
+            PickerEvent::CopySessionId => {
+                if let Some(session) = self.selected_session() {
+                    // Would copy to clipboard: session.id.clone()
+                }
+            }
+
+            PickerEvent::NewSession => {
+                // Would create new session
+            }
+
+            PickerEvent::Refresh => {
+                // Would trigger refresh callback
+            }
+
+            PickerEvent::Exit => {
+                return Some(String::new()); // Signal exit
+            }
+
+            _ => {}
+        }
+
+        None
+    }
+
+    /// Convert KeyEvent to PickerEvent (for integration with Overlay)
+    pub fn key_to_event(key_code: crossterm::event::KeyCode) -> Option<PickerEvent> {
+        use crossterm::event::KeyCode;
+
+        match key_code {
+            KeyCode::Up => Some(PickerEvent::SelectPrev),
+            KeyCode::Down => Some(PickerEvent::SelectNext),
+            KeyCode::Home => Some(PickerEvent::SelectFirst),
+            KeyCode::End => Some(PickerEvent::SelectLast),
+            KeyCode::PageUp => Some(PickerEvent::PagePrev),
+            KeyCode::PageDown => Some(PickerEvent::PageNext),
+
+            KeyCode::Char('j') => Some(PickerEvent::ScrollDown),
+            KeyCode::Char('k') => Some(PickerEvent::ScrollUp),
+
+            KeyCode::Enter => Some(PickerEvent::Resume),
+            KeyCode::Char('d') => Some(PickerEvent::Delete),
+            KeyCode::Char('f') => Some(PickerEvent::CycleViewMode),
+            KeyCode::Char('c') => Some(PickerEvent::CopySessionId),
+            KeyCode::Char('n') => Some(PickerEvent::NewSession),
+            KeyCode::Char('r') => Some(PickerEvent::Refresh),
+
+            KeyCode::Char('y') => Some(PickerEvent::ConfirmAction),
+            KeyCode::Char('q') => Some(PickerEvent::Exit),
+            KeyCode::Esc => Some(PickerEvent::Exit),
+
+            _ => None,
+        }
+    }
+}
+
 /// Get current working directory
 fn get_cwd() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))
