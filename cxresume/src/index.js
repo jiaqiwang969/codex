@@ -10,7 +10,6 @@ import { listSessionFiles } from './utils/sessionFinder.js';
 import { searchSessions } from './utils/search.js';
 import { launchCodexRaw } from './utils/launch.js';
 import { filterSessionsByCwd, extractSessionMetaQuick } from './utils/metaQuick.js';
-import { ensureWorkspaceSessionIds, findSessionsByIds, createWorkspaceSessionAndRecord, readWorkspaceSessionIds } from './utils/workspaceSessions.js';
 // dynamic keep is not used in full-history compression mode
 
 function shellQuoteSingleArg(s) {
@@ -72,6 +71,8 @@ function parseArgs(argv) {
       case '--print': args.print = true; break;
       case '--no-launch': args.noLaunch = true; break;
       case '--debug': args.debug = true; break;
+      case '-r':
+      case '--recursive': args.recursive = true; break;
       default:
         console.warn(chalk.yellow(`Unknown option: ${a}`));
     }
@@ -88,7 +89,7 @@ function showHelp() {
   console.log('  cxresume               # interactive session picker');
   console.log('  cxresume --list        # list recent session files');
   console.log('  cxresume --open <file> # open a specific session file');
-  console.log('  cxresume cwd           # resume sessions recorded for current workspace');
+  console.log('  cxresume cwd           # resume sessions recorded from this workspace (recursive)');
   console.log('  cxresume .             # filter sessions by current working directory (if available)');
   console.log('\nOptions:');
   console.log('  --root <dir>           Override sessions root (default: ~/.codex/sessions)');
@@ -100,8 +101,9 @@ function showHelp() {
   console.log('  --legacy-ui            Use legacy single-prompt selector (no split view)');
   console.log('  --print                Only print the command and exit');
   console.log('  --no-launch            Do not launch Codex');
-  console.log('  -n, --new              (with "cwd") create, record, and resume a new workspace session');
-  console.log('  -l, --latest           (with "cwd") resume the most recent recorded workspace session');
+  console.log('  -n, --new              (with "cwd") start a fresh Codex session in this directory');
+  console.log('  -l, --latest           (with "cwd") resume the most recent matching session');
+  console.log('  -r, --recursive        (with "cwd") (deprecated; recursion is now enabled by default)');
   console.log('  --debug                Print extra diagnostics');
   console.log('  -h, --help             Show help');
   console.log('  -v, --version          Show version');
@@ -159,58 +161,50 @@ async function main() {
     await launchCodexRaw({ codexCmd: cmd, workingDir: workingDir || process.cwd() });
   }
 
-  async function createAndResumeWorkspaceSession() {
-    try {
-      const created = await createWorkspaceSessionAndRecord(process.cwd(), { codexCmd: cfg.codexCmd });
-      await resumeSessionById(created.id);
-    } catch (err) {
-      const msg = err?.shortMessage || err?.message || err;
-      console.error(chalk.red(`创建新的工作区会话失败：${msg}`));
-      if (args.debug && err?.stack) console.error(chalk.gray(err.stack));
+  async function launchNewWorkspaceSession() {
+    const command = String(cfg.codexCmd || 'codex').trim();
+    if (!command) {
+      console.error(chalk.red('未配置 Codex 命令。请在配置文件或 --codex 中指定。'));
+      return;
     }
+    if (args.print) {
+      console.log(command);
+      return;
+    }
+    if (args.noLaunch) {
+      await showMessage('已生成命令但未启动（--no-launch）。');
+      return;
+    }
+    await launchCodexRaw({ codexCmd: command, workingDir: process.cwd() });
   }
 
-  let workspaceSessionIds = [];
   let workspaceSessions = [];
   let workspacePathsSet = null;
   if (workspaceMode) {
     const cwd = process.cwd();
     try {
-      if (args.newSession) {
-        workspaceSessionIds = await readWorkspaceSessionIds(cwd);
-      } else {
-        workspaceSessionIds = await ensureWorkspaceSessionIds(cwd, { codexCmd: cfg.codexCmd });
-      }
-      if (!args.newSession) {
-        let lookup = await findSessionsByIds(root, workspaceSessionIds);
-        if ((!lookup.files || !lookup.files.length) && workspaceSessionIds.length) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          lookup = await findSessionsByIds(root, workspaceSessionIds);
-        }
-        const { files = [], missingIds = [] } = lookup;
-        workspaceSessions = files;
-        workspacePathsSet = new Set(files.map(f => path.resolve(f.path)));
-        if (missingIds.length && args.debug) {
-          console.error(chalk.gray(`Missing session files for ids: ${missingIds.join(', ')}`));
-        }
-      }
+      workspaceSessions = await filterSessionsByCwd(root, cwd, { matchDescendants: true });
+      workspacePathsSet = new Set(workspaceSessions.map(f => path.resolve(f.path)));
     } catch (err) {
-      if (args.debug) console.error(chalk.red(`Workspace session setup failed: ${err?.message || err}`));
+      if (args.debug) console.error(chalk.red(`工作区会话筛选失败：${err?.message || err}`));
     }
   }
 
   if (workspaceMode && args.newSession) {
-    await createAndResumeWorkspaceSession();
+    await launchNewWorkspaceSession();
     return;
   }
 
   if (workspaceMode && args.resumeLatest) {
-    const latestId = workspaceSessionIds.at(-1);
-    if (!latestId) {
-      console.log(chalk.yellow('当前目录下暂无已记录的 session。'));
+    const latest = workspaceSessions[0];
+    if (!latest) {
+      console.log(chalk.yellow('当前目录及子目录下暂无匹配的 session。'));
       return;
     }
-    await resumeSessionById(latestId);
+    let meta;
+    try { meta = await extractSessionMetaQuick(latest.path); } catch {}
+    const sessionId = meta?.id || path.relative(root, latest.path);
+    await resumeSessionById(sessionId);
     return;
   }
 
@@ -229,20 +223,16 @@ async function main() {
       : results;
     if (!scopedResults.length) {
       const baseMsg = `No matches for "${args.search}" under ${root}`;
-      if (workspaceMode) console.log(chalk.yellow(`${baseMsg} (workspace sessions only).`));
+      if (workspaceMode) console.log(chalk.yellow(`${baseMsg} (只显示当前目录及子目录的会话)。`));
       else console.log(chalk.yellow(baseMsg));
       return;
     }
     // Use split TUI with prefiltered results
-    tuiResult = await pickSessionSplitTUI(root, scopedResults, { hide: args.hide, currentDirOnly: false, workspaceMode });
+    tuiResult = await pickSessionSplitTUI(root, scopedResults, { hide: args.hide, currentDirOnly: false, workspaceMode: false });
     if (!tuiResult) return;
     if (tuiResult.action === 'startNew') {
       const cmd = [cfg.codexCmd, (tuiResult.extraArgs || '').trim()].filter(Boolean).join(' ');
       await launchCodexRaw({ codexCmd: cmd, workingDir: tuiResult.workingDir || process.cwd() });
-      return;
-    }
-    if (tuiResult.action === 'workspaceCreate') {
-      await createAndResumeWorkspaceSession();
       return;
     }
     targetFile = tuiResult.path;
@@ -251,11 +241,7 @@ async function main() {
     if (workspaceMode) {
       preset = workspaceSessions.slice().sort((a, b) => b.mtime - a.mtime);
       if (!preset.length) {
-        if (workspaceSessionIds.length) {
-          console.log(chalk.yellow('未找到对应 session 文件，请稍候后再试或检查 ~/.codex/sessions。'));
-        } else {
-          console.log(chalk.yellow('当前目录下暂无已记录的 session。'));
-        }
+        console.log(chalk.yellow('当前目录及子目录下暂无匹配的 session。'));
         return;
       }
     } else if (currentDirOnly) {
@@ -264,7 +250,7 @@ async function main() {
         if (!preset.length) console.log(chalk.gray('No sessions matched current directory; showing all.'));
       } catch {}
     }
-    const pickerOptions = { hide: args.hide, currentDirOnly: workspaceMode ? false : currentDirOnly, workspaceMode };
+    const pickerOptions = { hide: args.hide, currentDirOnly: workspaceMode ? false : currentDirOnly, workspaceMode: false };
     const choice = args.legacyUI
       ? await pickSessionInteractively(root, preset)
       : await pickSessionSplitTUI(root, preset, pickerOptions);
@@ -274,10 +260,6 @@ async function main() {
       await launchCodexRaw({ codexCmd: cmd, workingDir: choice.workingDir || process.cwd() });
       return;
     }
-    if (choice.action === 'workspaceCreate') {
-      await createAndResumeWorkspaceSession();
-      return;
-    }
     tuiResult = choice;
     targetFile = choice.path;
   } else {
@@ -285,7 +267,7 @@ async function main() {
     const abs = path.isAbsolute(targetFile) ? targetFile : path.join(root, targetFile);
     if (fs.existsSync(abs)) targetFile = abs;
     if (workspaceMode && workspacePathsSet && !workspacePathsSet.has(path.resolve(targetFile))) {
-      console.error(chalk.red('当前目录未记录该 session；请使用 cxresume cwd 选择已记录的 session。'));
+      console.error(chalk.red('当前目录未记录该 session；请使用 cxresume cwd 选择匹配列表中的会话。'));
       return;
     }
   }

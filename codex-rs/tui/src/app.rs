@@ -458,6 +458,38 @@ impl App {
                     }
                 }
             }
+            KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                // Show cxresume session picker for current working directory
+                match crate::cxresume_picker_widget::create_session_picker_overlay() {
+                    Ok(overlay) => {
+                        let _ = tui.enter_alt_screen();
+                        self.overlay = Some(overlay);
+                        tui.frame_requester().schedule_frame();
+                    }
+                    Err(err) => {
+                        // Show error message to user via overlay
+                        let error_lines = vec![
+                            "Failed to load sessions:".red().into(),
+                            Line::from(""),
+                            err.clone().dim().into(),
+                            Line::from(""),
+                            "Make sure cxresume is installed and there are sessions in ~/.codex/sessions".italic().into(),
+                        ];
+                        let _ = tui.enter_alt_screen();
+                        self.overlay = Some(Overlay::new_static_with_title(
+                            error_lines,
+                            "C X R E S U M E   E R R O R".to_string(),
+                        ));
+                        tui.frame_requester().schedule_frame();
+                        tracing::warn!("Failed to create session picker: {}", err);
+                    }
+                }
+            }
             // Esc primes/advances backtracking only in normal (not working) mode
             // with an empty composer. In any other state, forward Esc so the
             // active UI (e.g. status indicator, modals, popups) handles it.

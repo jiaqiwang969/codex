@@ -9,7 +9,7 @@ cxresume（Codex Resume CLI）
 Codex Resume（cxresume）是一个用于“继续/恢复 Codex 会话”的命令行/TUI 小工具：从 `~/.codex/sessions` 加载历史记录，并使用 `codex resume <sessionId>` 启动 Codex 让你在原处继续。为了更方便的流程，我们提供两个主要入口：
 
 - `cxresume` —— 浏览所有 Codex 历史会话
-- `cxresume cwd` —— 只关注当前工作目录的会话，并把会话 ID 保存到 `.cxresume_sessions`
+- `cxresume cwd` —— 只关注当前目录及子目录下记录的会话（基于日志中的 `cwd`）
 
 如果你在搜索 “codex resume”、“resume codex sessions” 或 “load sessions from history”，这个工具正是为此场景而生。
 
@@ -27,7 +27,7 @@ Codex Resume（cxresume）是一个用于“继续/恢复 Codex 会话”的命�
 快速开始
 
 - 运行 `cxresume` 打开分屏 TUI：上半区列出会话，下半区展示最近对话预览。按 Enter 后，直接运行 `codex resume <sessionId>` 启动 Codex 并恢复会话。
-- 运行 `cxresume cwd` 聚焦当前工作目录。该命令会读取或生成 `.cxresume_sessions`，自动跟踪新会话，并只显示与本项目相关的会话 ID。
+- 运行 `cxresume cwd` 聚焦当前工作目录及其子目录。该命令会根据日志中的 `cwd` 元数据筛选出与当前项目相关的会话。
 
 为什么是 cxresume
 
@@ -44,7 +44,6 @@ Codex Resume（cxresume）是一个用于“继续/恢复 Codex 会话”的命�
 - 预览滚动：`j/k`
 - 启动会话：`Enter`
 - 新建会话：`n`（在该会话记录的目录中启动）
-- 工作区新建：`s`（仅在 `cxresume cwd` 中生效）即时创建并记录新的工作区会话
 - 删除会话：`d` 删除选中的会话文件（带确认弹窗；可用 `Y/N` 或 `←/→` 选择，`Enter` 确认；会永久删除该 `.jsonl` 文件）
 - 临时添加参数：`-`（为本次启动临时追加到 `codexCmd`）
 - 复制会话 ID：`c`
@@ -63,22 +62,20 @@ Codex Resume（cxresume）是一个用于“继续/恢复 Codex 会话”的命�
 - `--print` — 仅打印将要执行的命令并退出
 - `--no-launch` — 不启动 Codex（通常配合 `--print` 使用）
 - `-y`, `--yes` — 跳过交互确认
-- `-n`, `--new`（配合 `cwd`）— 创建、记录并立即恢复新的工作区会话
-- `-l`, `--latest`（配合 `cwd`）— 直接恢复该目录最近记录的工作区会话
+- `-n`, `--new`（配合 `cwd`）— 在当前目录下启动一个新的 Codex 会话
+- `-l`, `--latest`（配合 `cwd`）— 直接恢复该目录及子目录中最近记录的会话
+- `-r`, `--recursive`（配合 `cwd`）— 已废弃（递归筛选现在默认开启）
 - `-h`, `--help` — 帮助
 - `-v`, `--version` — 版本
 
 筛选
 
 - 当前目录筛选：`cxresume .` 仅显示日志中 `cwd` 等于当前目录的会话（尽力而为，依赖日志中是否记录 `cwd`）。
-- 工作区筛选：`cxresume cwd` 仅展示 `.cxresume_sessions` 中记录的会话，且在缺失时会自动创建一条新的记录。
+- 工作区筛选：`cxresume cwd` 会筛选日志中 `cwd` 位于当前目录或任意子目录的会话（同样依赖日志是否包含 `cwd`）。
 
 工作区会话
 
-- 每个工作目录都会维护一个 `.cxresume_sessions` 文件，存储通过 `cxresume cwd` 创建的会话 ID。
-- 使用 `cxresume cwd -n` 可以创建一个新的工作区会话，写入 `.cxresume_sessions` 并立即启动。
-- 使用 `cxresume cwd -l` 可以直接恢复该目录最近记录的会话。
-- 在 `cxresume cwd` 打开的 TUI 内，随时按 `s` 就能触发同样的“创建并恢复”流程。
+会话日志会记录生成时的 `cwd`。`cxresume cwd` 直接利用这些元数据，把会话列表限定在当前目录及所有子目录，无需额外的记录文件。想要从当前目录开启新会话，可使用 `cxresume cwd -n`；想快速回到最近的匹配会话，使用 `cxresume cwd -l`。在分屏 TUI 中，也可以按 `n` 以高亮项的工作目录启动新的 Codex 会话。
 
 配置
 

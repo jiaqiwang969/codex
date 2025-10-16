@@ -51,9 +51,16 @@ export async function extractSessionMetaQuick(filePath, { maxLines = 1 } = {}) {
   return { startTime, cwd, id };
 }
 
-export async function filterSessionsByCwd(root, cwd, { limit = 2000 } = {}) {
+export async function filterSessionsByCwd(root, cwd, { limit = 2000, matchDescendants = false } = {}) {
   const all = await listSessionFiles(root);
   const target = path.resolve(cwd);
+  const isWindows = process.platform === 'win32';
+  const norm = (p) => {
+    const resolved = path.resolve(p);
+    return isWindows ? resolved.toLowerCase() : resolved;
+  };
+  const targetNorm = norm(target);
+  const descendantPrefix = `${targetNorm}${path.sep}`;
   const out = [];
   let idx = 0;
   const conc = 8;
@@ -63,7 +70,12 @@ export async function filterSessionsByCwd(root, cwd, { limit = 2000 } = {}) {
       const f = all[i];
       try {
         const meta = await extractSessionMetaQuick(f.path);
-        if (meta.cwd && path.resolve(meta.cwd) === target) {
+        if (!meta.cwd) continue;
+        const resolved = norm(meta.cwd);
+        const matches = matchDescendants
+          ? (resolved === targetNorm || resolved.startsWith(descendantPrefix))
+          : resolved === targetNorm;
+        if (matches) {
           out.push(f);
         }
       } catch {}

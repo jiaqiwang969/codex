@@ -41,6 +41,7 @@ mod cli;
 mod clipboard_paste;
 mod color;
 pub mod custom_terminal;
+mod cxresume_picker_widget;
 mod diff_render;
 mod exec_cell;
 mod exec_command;

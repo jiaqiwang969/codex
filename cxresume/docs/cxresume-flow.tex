@@ -36,7 +36,7 @@ cxresume 是一个面向 Codex CLI 的会话恢复工具，核心能力是从历
 \textbf{日志解析与预览} & \texttt{src/utils/parser.js}、\texttt{src/utils/preview.js}：兼容新旧日志格式，提取对话消息并生成彩色预览文本。 \\
 \textbf{交互界面} & \texttt{src/ui.js} 提供基于 Enquirer 的简易选择器；\texttt{src/tui/splitPicker.js} 提供 Blessed 分屏 TUI，支持分页、删除、复制和附加参数。 \\
 \textbf{Codex 调用} & \texttt{src/utils/launch.js}：使用 \texttt{execaCommand} 在 shell 中运行构造好的 Codex 命令。 \\
-\textbf{工作区会话管理} & \texttt{src/utils/workspaceSessions.js}：维护 \texttt{.cxresume\_sessions}，必要时调用 Codex 创建新会话并记录。 \\
+\textbf{工作区筛选} & \texttt{src/utils/metaQuick.js}：根据日志内的 \texttt{cwd} 元数据筛选当前目录及子目录的会话记录。 \\
 \end{longtable}
 
 \section{CLI 主流程}

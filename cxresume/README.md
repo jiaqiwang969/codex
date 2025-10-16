@@ -9,7 +9,7 @@ cxresume (Codex Resume CLI)
 Codex Resume (cxresume) is a tiny CLI/TUI to resume Codex sessions fast. It discovers and loads conversation logs under `~/.codex/sessions`, and launches Codex using `codex resume <sessionId>` so you can pick up where you left off. Two primary entry points keep things simple:
 
 - `cxresume` — browse every session from your Codex history
-- `cxresume cwd` — focus on the sessions that were created in **this workspace** and keep their IDs in `.cxresume_sessions`
+- `cxresume cwd` — focus on sessions whose recorded working directory lies in this workspace (recursively)
 
 If you’re searching for “codex resume”, “resume codex sessions”, or “load sessions from history”, this tool was built for exactly that workflow.
 
@@ -27,7 +27,7 @@ Tip: one‑off run without installing: `npx cxresume --help`
 Quick Start
 
 - `cxresume` — opens a split‑pane TUI. The top pane lists sessions; the bottom pane previews recent dialog. Press Enter to launch `codex resume <sessionId>` for the selected session.
-- `cxresume cwd` — pins the view to the current workspace directory. The command will read or create `.cxresume_sessions`, auto-track new sessions, and only display IDs associated with this project.
+- `cxresume cwd` — pins the view to the current workspace tree. The command filters sessions whose recorded `cwd` matches the current directory or any subdirectory.
 
 Why cxresume
 
@@ -44,7 +44,6 @@ TUI Keys
 - Preview: `j/k` scroll the bottom preview
 - Start: `Enter` resume the selected session
 - New session: `n` start a new Codex session in the same directory
-- Workspace new session: `s` (only in `cxresume cwd`) create, record, and resume a workspace session immediately
 - Delete session: `d` delete the selected session file (confirms via dialog; choose Yes/No with `Y/N` or `←/→`, `Enter` confirms selection; permanently removes the `.jsonl` file)
 - Edit options: `-` append extra arguments to your `codexCmd` for this launch
 - Copy ID: `c` copy the session identifier (from the file’s meta) to clipboard
@@ -63,22 +62,20 @@ Options
 - `--print` — print the exact command that would run and exit
 - `--no-launch` — do not launch Codex (useful with `--print`)
 - `-y`, `--yes` — skip interactive pauses
-- `-n`, `--new` (with `cwd`) — create, record, and resume a new workspace session
-- `-l`, `--latest` (with `cwd`) — resume the most recently recorded workspace session
+- `-n`, `--new` (with `cwd`) — launch a fresh Codex session from this directory
+- `-l`, `--latest` (with `cwd`) — resume the most recent session whose recorded `cwd` is inside this directory
+- `-r`, `--recursive` (with `cwd`) — deprecated (recursion is always enabled)
 - `-h`, `--help` — show help
 - `-v`, `--version` — show version
 
 Filters
 
-- Dot filter: `cxresume .` shows only sessions whose recorded working directory matches your current directory (best‑effort; depends on logs containing `cwd`).
-- Workspace filter: `cxresume cwd` restricts to sessions recorded for the current directory via `.cxresume_sessions`, auto-creating one if needed.
+- Dot filter: `cxresume .` shows only sessions whose recorded working directory exactly matches your current directory (best‑effort; depends on logs containing `cwd`).
+- Workspace filter: `cxresume cwd` restricts to sessions whose recorded working directory is the current directory or any subdirectory (best‑effort; depends on logs containing `cwd`).
 
 Workspace Sessions
 
-- Each workspace uses a local `.cxresume_sessions` file to remember session IDs created via `cxresume cwd`.
-- Run `cxresume cwd -n` to create a fresh session for this directory, append its ID to `.cxresume_sessions`, and launch Codex immediately.
-- Run `cxresume cwd -l` to jump straight into the most recently recorded workspace session.
-- Inside the TUI opened by `cxresume cwd`, press `s` at any time to trigger the same “create and resume” flow without leaving the picker.
+Each session log stores the working directory from which it was created. `cxresume cwd` reuses that metadata to scope the picker to your current project tree—no additional bookkeeping files are required. Use `cxresume cwd -n` if you want to launch a brand new Codex session from the current directory, or `cxresume cwd -l` to resume the latest matching session immediately. Inside the TUI, press `n` to start a new Codex session with the same working directory as the highlighted entry.
 
 Config
 
