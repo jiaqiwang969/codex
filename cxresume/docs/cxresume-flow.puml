@@ -1,0 +1,79 @@
+@startuml
+title cxresume 主流程
+skinparam dpi 450
+skinparam shadowing false
+skinparam rectangle {
+  RoundCorner 10
+}
+
+start
+:解析 CLI 参数;
+
+if (--help 或 --version?) then (是)
+  :输出帮助 / 版本信息;
+  stop
+endif
+
+:加载配置\n解析日志根目录;
+
+if (--list?) then (是)
+  :列出最近会话并退出;
+  stop
+endif
+
+partition "工作区处理 (cxresume cwd)" {
+  if (workspace 模式?) then (是)
+    :读取/创建\n工作区会话 ID;
+    if (-n/--new?) then (新建)
+      :调用 Codex 创建新会话\n并写入 .cxresume_sessions;
+      :resumeSessionById(新 ID);
+      stop
+    elseif (-l/--latest?) then (最近)
+      :resumeSessionById(最近 ID);
+      stop
+    else (选择列表)
+      :通过 ID 查找\n工作区会话文件;
+    endif
+  endif
+}
+
+partition "选择目标会话" {
+  if (--search?) then (搜索)
+    :全文扫描日志匹配关键词;
+    if (命中结果?) then (是)
+      :分屏 TUI 呈现命中列表;
+    else (无结果)
+      :提示未找到匹配项;
+      stop
+    endif
+  elseif (--open 指定文件?) then (直接打开)
+    :定位目标日志文件;
+  else (交互选择)
+    :准备候选列表\n(工作区预设 / 当前目录 / 全量);
+    :分屏 TUI 或 AutoComplete\n等待用户选择;
+  endif
+}
+
+if (选择 startNew?) then (新会话)
+  :组合 Codex 新会话命令\n并立即启动;
+  stop
+elseif (选择 workspaceCreate?) then (工作区新建)
+  :创建并记录新的工作区会话;
+  :resumeSessionById(新 ID);
+  stop
+endif
+
+partition "恢复 Codex" {
+  :提取 sessionId\n并可选渲染预览;
+  if (--print?) then (仅打印)
+    :输出 resume 命令;
+    stop
+  elseif (--no-launch?) then (不启动)
+    :提示未自动启动 Codex;
+    stop
+  endif
+  :执行 codex resume <sessionId>;
+}
+
+stop
+@enduml
