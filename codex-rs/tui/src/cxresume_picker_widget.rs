@@ -20,6 +20,47 @@ pub struct SessionInfo {
     pub model: String,
 }
 
+/// Split View Layout Manager for dual-panel picker
+#[derive(Debug, Clone)]
+pub struct SplitLayout {
+    pub left_width: u16,      // Left panel width (35%)
+    pub right_width: u16,     // Right panel width (65%)
+    pub total_height: u16,
+    pub total_width: u16,
+    pub gap: u16,             // Space between panels
+}
+
+impl SplitLayout {
+    /// Create a new split layout from total dimensions
+    pub fn new(total_width: u16, total_height: u16) -> Self {
+        // Account for 1-char gap between panels
+        let usable_width = total_width.saturating_sub(1);
+
+        // 35% left, 65% right
+        let left_width = (usable_width as f32 * 0.35) as u16;
+        let right_width = usable_width.saturating_sub(left_width);
+
+        SplitLayout {
+            left_width,
+            right_width,
+            total_height,
+            total_width,
+            gap: 1,
+        }
+    }
+
+    /// Get the left panel area (0, 0, left_width, total_height)
+    pub fn left_area(&self) -> (u16, u16, u16, u16) {
+        (0, 0, self.left_width, self.total_height)
+    }
+
+    /// Get the right panel area
+    pub fn right_area(&self) -> (u16, u16, u16, u16) {
+        let x = self.left_width + self.gap;
+        (x, 0, self.right_width, self.total_height)
+    }
+}
+
 /// Get current working directory
 fn get_cwd() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))
@@ -250,59 +291,126 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
     }
 }
 
-/// Format session information for display with colors and detailed info
-fn format_session_display(sessions: &[SessionInfo], selected_idx: Option<usize>) -> Vec<Line<'static>> {
+/// Format left panel: session list with 3 lines per session
+fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usize>, _width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     if sessions.is_empty() {
-        return vec![
-            Line::from(""),
-            "No sessions found in current working directory.".yellow().into(),
-            Line::from(""),
-            "Create a new session or navigate to a directory with existing sessions.".dim().into(),
-        ];
+        lines.push("No sessions".yellow().into());
+        return lines;
     }
 
-    // Add header
-    lines.push(Line::from(""));
-    lines.push("Recent Sessions in Current Directory".green().bold().into());
+    // Header with pagination info
+    let header = format!(
+        "SESSIONS  │  Page 1/1 │ Showing {}/{}",
+        sessions.len(),
+        sessions.len()
+    );
+    lines.push(ansi_escape_line(&header).bold());
     lines.push(Line::from(""));
 
-    // Display sessions with enhanced information (two lines per session)
+    // Display sessions (3 lines per session + 1 blank line spacing)
     for (idx, session) in sessions.iter().enumerate() {
         let is_selected = selected_idx == Some(idx);
-        let marker = if is_selected { "▶ " } else { "  " };
+        let marker = if is_selected { "▶" } else { " " };
 
-        // First line: ID, age, message count, last role
-        let session_line = format!(
-            "{}{}.  {} {} │ {} messages │ {}",
+        // Line 1: ID, age
+        let line1_text = format!(
+            " {} {}  ({})",
             marker,
-            idx + 1,
             session.id.as_str().cyan(),
-            format!("({})", session.age).dim(),
-            session.message_count.to_string().yellow(),
-            format!("Last: {}", session.last_role).green()
+            session.age.as_str().dim()
         );
-        let mut line1 = ansi_escape_line(&session_line);
+        let mut line1 = ansi_escape_line(&line1_text);
         if is_selected {
             line1 = line1.reversed();
         }
         lines.push(line1);
 
-        // Second line: Model and token usage
-        let model_line = format!(
-            "      Model: {} │ Tokens: {}",
-            session.model.as_str().cyan(),
-            session.total_tokens.to_string().yellow()
-        );
-        let mut line2 = ansi_escape_line(&model_line);
+        // Line 2: CWD or path
+        let line2_text = format!("   {}", session.cwd.as_str().dim());
+        let mut line2 = ansi_escape_line(&line2_text);
         if is_selected {
             line2 = line2.reversed();
         }
         lines.push(line2);
 
-        // Add spacing between sessions
+        // Line 3: Messages + Model + Last role
+        let line3_text = format!(
+            "   {} messages • {} • {}",
+            session.message_count.to_string().yellow(),
+            session.model.as_str().cyan(),
+            format!("Last: {}", session.last_role).green()
+        );
+        let mut line3 = ansi_escape_line(&line3_text);
+        if is_selected {
+            line3 = line3.reversed();
+        }
+        lines.push(line3);
+
+        // Spacing
         lines.push(Line::from(""));
+    }
+
+    lines
+}
+
+/// Format right panel: message preview with block-style format
+fn format_right_panel_preview(session: &SessionInfo, width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    // Info box
+    let info = format!(
+        "▸ Session: {} │ Path: {}",
+        session.id.as_str().cyan(),
+        session.cwd.as_str().dim()
+    );
+    lines.push(ansi_escape_line(&info));
+    lines.push(Line::from("─".repeat(width as usize)));
+    lines.push(Line::from(""));
+
+    // Message blocks
+    let messages = extract_recent_messages_with_timestamps(&session.path, 6);
+    if messages.is_empty() {
+        lines.push("No messages".yellow().into());
+    } else {
+        for (role, content, _timestamp) in messages.iter() {
+            // Block header with vertical bar
+            let role_color = if role == "User" {
+                role.as_str().red()
+            } else {
+                role.as_str().green()
+            };
+
+            let header = format!("┃ {}", role_color);
+            lines.push(ansi_escape_line(&header));
+
+            // Message content with wrapping
+            let max_content_width = width.saturating_sub(2) as usize;
+            let mut line_count = 0;
+            let line_limit = 3; // Show max 3 lines per message in preview
+
+            for content_line in content.lines() {
+                if line_count >= line_limit {
+                    lines.push("  ⋮".dim().into());
+                    break;
+                }
+
+                if content_line.is_empty() {
+                    continue;
+                }
+
+                if content_line.len() > max_content_width {
+                    let chunk = &content_line[..max_content_width.saturating_sub(1)];
+                    lines.push(ansi_escape_line(&format!("  {}…", chunk)));
+                } else {
+                    lines.push(ansi_escape_line(&format!("  {}", content_line)));
+                }
+                line_count += 1;
+            }
+
+            lines.push(Line::from(""));
+        }
     }
 
     lines
@@ -411,6 +519,102 @@ fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
     lines
 }
 
+/// Extract messages with timestamps (role, content, timestamp)
+fn extract_recent_messages_with_timestamps(path: &PathBuf, limit: usize) -> Vec<(String, String, String)> {
+    let mut messages = Vec::new();
+
+    if let Ok(file) = fs::File::open(path) {
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                    let msg_type = json
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    if msg_type == "user_message" || msg_type == "assistant_message" {
+                        if let Some(payload) = json.get("payload") {
+                            if let Some(content) = payload.get("content").and_then(|c| c.as_str()) {
+                                let role = if msg_type == "user_message" { "User" } else { "Assistant" }.to_string();
+                                // Extract timestamp if available, otherwise use empty string
+                                let timestamp = payload
+                                    .get("timestamp")
+                                    .and_then(|t| t.as_str())
+                                    .unwrap_or("--:--:--")
+                                    .to_string();
+                                messages.push((role, content.to_string(), timestamp));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Keep only the last 'limit' messages
+    if messages.len() > limit {
+        messages.drain(0..messages.len() - limit);
+    }
+
+    messages
+}
+
+/// Format message blocks with vertical bar indicator (┃)
+/// This creates the block-style preview format used in cxresume JS
+fn format_message_blocks(session: &SessionInfo, width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    // Info box header
+    let info_text = format!(
+        "Session: {} • Path: {} • Started: {}",
+        session.id.as_str().cyan(),
+        session.cwd.as_str().dim(),
+        session.age.as_str().dim()
+    );
+    lines.push(ansi_escape_line(&info_text));
+    lines.push(Line::from(""));
+
+    let messages = extract_recent_messages_with_timestamps(&session.path, 8);
+    if messages.is_empty() {
+        lines.push("No messages found in this session.".yellow().into());
+    } else {
+        for (role, content, _timestamp) in messages.iter() {
+            // Message header with bar indicator (┃)
+            let role_color = if role == "User" {
+                role.as_str().red()
+            } else {
+                role.as_str().green()
+            };
+
+            let header_text = format!("┃ {}", role_color);
+            lines.push(ansi_escape_line(&header_text));
+
+            // Message body with wrapping and bar prefix
+            let usable_width = width.saturating_sub(3) as usize; // Account for "┃ " prefix
+            for content_line in content.lines() {
+                // Wrap long lines
+                if content_line.len() > usable_width {
+                    let mut remaining = content_line;
+                    while !remaining.is_empty() {
+                        let chunk_size = usable_width.min(remaining.len());
+                        let chunk = &remaining[..chunk_size];
+                        lines.push(ansi_escape_line(&format!("  {}", chunk)));
+                        remaining = &remaining[chunk_size..];
+                    }
+                } else {
+                    lines.push(ansi_escape_line(&format!("  {}", content_line)));
+                }
+            }
+
+            // Spacing between messages
+            lines.push(Line::from(""));
+        }
+    }
+
+    lines
+}
+
 /// Format session preview with recent messages
 fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -460,72 +664,91 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
     lines
 }
 
-/// Create a comprehensive session selection overlay with enhanced features
+/// Create a comprehensive Split View session picker overlay
 pub fn create_session_picker_overlay() -> Result<Overlay, String> {
     let sessions = get_cwd_sessions()?;
 
+    // Estimate dimensions for layout (will be adjusted at render time)
+    let layout = SplitLayout::new(120, 30);
+
     let mut content = Vec::new();
 
-    // Add title section
+    // Add title bar
     content.push("".into());
-    content.push("CXRESUME SESSION PICKER - ENHANCED".bold().cyan().into());
+    let title = format!(
+        "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions)",
+        sessions.len()
+    );
+    content.push(ansi_escape_line(&title).bold().cyan());
     content.push("".into());
 
-    // Add session list with enhanced metadata (show first session as selected)
-    if !sessions.is_empty() {
-        content.extend(format_session_display(&sessions, Some(0)));
-    } else {
-        content.push("No sessions available in current working directory".yellow().into());
+    if sessions.is_empty() {
+        content.push("No sessions found in current working directory".yellow().into());
         content.push("".into());
+        content.push("Press q to close".dim().into());
+    } else {
+        // Show first session as default selected
+        let selected_idx = 0;
+
+        // Split layout visualization: left panel (sessions list) + right panel (preview)
+        // We'll show them side by side by creating the left panel content
+        content.extend(format_left_panel_sessions(&sessions, Some(selected_idx), layout.left_width));
+
+        // Add a visual separator
+        content.push(Line::from(""));
+        content.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
+        content.push(Line::from(""));
+
+        // Show preview for selected session
+        if let Some(selected_session) = sessions.get(selected_idx) {
+            content.extend(format_right_panel_preview(selected_session, layout.right_width));
+        }
     }
 
-    // Add help section
-    content.extend(format_help_section());
-
-    // Add footer with statistics
-    content.push("".into());
-    let total_sessions = sessions.len();
-    let total_messages: usize = sessions.iter().map(|s| s.message_count).sum();
-    let avg_messages = if total_sessions > 0 {
-        total_messages / total_sessions
-    } else {
-        0
-    };
-    let footer = format!(
-        "💡 Statistics: {} sessions | {} total messages | {} avg/session",
-        total_sessions, total_messages, avg_messages
-    );
-    content.push(ansi_escape_line(&footer));
+    // Add footer with instructions
+    content.push(Line::from(""));
+    content.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+    content.push("Keyboard Shortcuts:".bold().into());
+    content.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
+    content.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
+    content.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
+    content.push(Line::from(""));
 
     let refresh_callback = Box::new(|| {
         match get_cwd_sessions() {
             Ok(sessions) => {
+                let layout = SplitLayout::new(120, 30);
                 let mut result = Vec::new();
+
                 result.push("".into());
-                result.push("CXRESUME SESSION PICKER - ENHANCED".bold().cyan().into());
+                let title = format!(
+                    "    C X R E S U M E   S E S S I O N   P I C K E R    ({} sessions)",
+                    sessions.len()
+                );
+                result.push(ansi_escape_line(&title).bold().cyan());
                 result.push("".into());
 
                 if !sessions.is_empty() {
-                    result.extend(format_session_display(&sessions, Some(0)));
+                    let selected_idx = 0;
+                    result.extend(format_left_panel_sessions(&sessions, Some(selected_idx), layout.left_width));
+                    result.push(Line::from(""));
+                    result.push("─────  ▼ RIGHT PANEL PREVIEW ▼  ─────".dim().into());
+                    result.push(Line::from(""));
+
+                    if let Some(selected_session) = sessions.get(selected_idx) {
+                        result.extend(format_right_panel_preview(selected_session, layout.right_width));
+                    }
                 } else {
                     result.push("No sessions available".yellow().into());
-                    result.push("".into());
                 }
 
-                result.extend(format_help_section());
-                result.push("".into());
-                let total_sessions = sessions.len();
-                let total_messages: usize = sessions.iter().map(|s| s.message_count).sum();
-                let avg_messages = if total_sessions > 0 {
-                    total_messages / total_sessions
-                } else {
-                    0
-                };
-                let footer = format!(
-                    "💡 Statistics: {} sessions | {} total messages | {} avg/session",
-                    total_sessions, total_messages, avg_messages
-                );
-                result.push(ansi_escape_line(&footer));
+                result.push(Line::from(""));
+                result.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+                result.push("Keyboard Shortcuts:".bold().into());
+                result.push(ansi_escape_line("  ↑↓      Navigate sessions       j/k    Scroll preview      Page↑/↓  Page jump"));
+                result.push(ansi_escape_line("  Enter   Resume session         d      Delete              f        Full preview"));
+                result.push(ansi_escape_line("  n       New session            c      Copy ID             q/Esc    Close"));
+                result.push(Line::from(""));
 
                 Ok(result)
             }
@@ -542,7 +765,8 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
                     "  • Sessions are stored under ~/.codex/sessions/YYYY/MM/DD/".dim().into(),
                     "".into(),
                 ];
-                error_lines.extend(format_help_section());
+                error_lines.push(Line::from("────────────────────────────────────────────────────────────────").dim());
+                error_lines.push("Press q to close".dim().into());
                 Ok(error_lines)
             }
         }
@@ -550,7 +774,7 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
 
     Ok(Overlay::new_static_with_title_no_wrap_refresh(
         content,
-        "C X R E S U M E   │   ↑/↓:select   j/k:scroll   i:info   r:refresh   d:delete   q/Esc:close   │   C t r l + X"
+        "S E S S I O N   P I C K E R   │   ↑/↓:select   j/k:scroll   Enter:resume   d:delete   q/Esc:close   │   Ctrl+X"
             .to_string(),
         refresh_callback,
     ))
