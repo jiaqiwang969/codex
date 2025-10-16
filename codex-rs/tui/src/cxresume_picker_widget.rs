@@ -321,7 +321,7 @@ impl PickerState {
     pub fn new(sessions: Vec<SessionInfo>) -> Self {
         let items_count = sessions.len();
         let pagination = Pagination::new(items_count, 30); // 30 items per page
-        PickerState {
+        let mut picker_state = PickerState {
             sessions,
             selected_idx: 0,
             scroll_offset_left: 0,
@@ -331,7 +331,10 @@ impl PickerState {
             modal_active: false,
             modal_message: String::new(),
             cache: CacheLayer::new(),
-        }
+        };
+        // Prefetch the first visible page of sessions on initial load
+        picker_state.prefetch_visible_page();
+        picker_state
     }
 
     /// Get currently selected session
@@ -350,6 +353,8 @@ impl PickerState {
         if self.pagination.next_page() {
             self.selected_idx = self.pagination.page_start();
             self.scroll_offset_right = 0;
+            // Prefetch visible page for faster display
+            self.prefetch_visible_page();
         }
     }
 
@@ -358,6 +363,8 @@ impl PickerState {
         if self.pagination.prev_page() {
             self.selected_idx = self.pagination.page_start();
             self.scroll_offset_right = 0;
+            // Prefetch visible page for faster display
+            self.prefetch_visible_page();
         }
     }
 
@@ -366,6 +373,8 @@ impl PickerState {
         if self.selected_idx > 0 {
             self.selected_idx -= 1;
             self.scroll_offset_right = 0; // Reset preview scroll
+            // Prefetch adjacent sessions for smooth navigation
+            self.prefetch_adjacent_sessions();
         }
     }
 
@@ -374,6 +383,8 @@ impl PickerState {
         if self.selected_idx < self.sessions.len().saturating_sub(1) {
             self.selected_idx += 1;
             self.scroll_offset_right = 0; // Reset preview scroll
+            // Prefetch adjacent sessions for smooth navigation
+            self.prefetch_adjacent_sessions();
         }
     }
 
@@ -446,6 +457,41 @@ impl PickerState {
     /// Clear the entire cache (for refresh operations)
     pub fn clear_cache(&mut self) {
         self.cache.clear();
+    }
+
+    /// Prefetch preview for session at index (non-blocking optimization)
+    /// This method loads the preview into cache if not already cached
+    pub fn prefetch_preview_for_index(&mut self, idx: usize) {
+        if let Some(session) = self.sessions.get(idx) {
+            // Only prefetch if not already in cache
+            if self.cache.get_preview(&session.id).is_none() {
+                let messages = extract_recent_messages_with_timestamps(&session.path, 6);
+                self.cache.cache_preview(session.id.clone(), messages);
+            }
+        }
+    }
+
+    /// Prefetch adjacent sessions (previous and next) when navigating
+    /// This provides lazy loading benefit without blocking the UI
+    pub fn prefetch_adjacent_sessions(&mut self) {
+        // Prefetch next session
+        if self.selected_idx + 1 < self.sessions.len() {
+            self.prefetch_preview_for_index(self.selected_idx + 1);
+        }
+
+        // Prefetch previous session
+        if self.selected_idx > 0 {
+            self.prefetch_preview_for_index(self.selected_idx - 1);
+        }
+    }
+
+    /// Prefetch visible page of sessions for immediate display
+    /// Useful when paginating or view first loads
+    pub fn prefetch_visible_page(&mut self) {
+        let range = self.pagination.page_range();
+        for idx in range {
+            self.prefetch_preview_for_index(idx);
+        }
     }
 }
 
