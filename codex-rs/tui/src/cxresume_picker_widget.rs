@@ -17,6 +17,7 @@ pub struct SessionInfo {
     pub mtime: u64,
     pub message_count: usize,
     pub last_role: String,
+    #[allow(dead_code)]
     pub total_tokens: usize,
     pub model: String,
 }
@@ -24,15 +25,20 @@ pub struct SessionInfo {
 /// Cached preview data for a session (messages and metadata)
 #[derive(Debug, Clone)]
 struct PreviewCache {
+    #[allow(dead_code)]
     messages: Vec<(String, String, String)>, // (role, content, timestamp)
+    #[allow(dead_code)]
     cached_at: u64,                           // Unix timestamp when cached
 }
 
 /// Message summary for quick access (count and last role)
 #[derive(Debug, Clone)]
-struct MessageSummary {
+pub struct MessageSummary {
+    #[allow(dead_code)]
     message_count: usize,
+    #[allow(dead_code)]
     last_role: String,
+    #[allow(dead_code)]
     last_update: u64,
 }
 
@@ -41,18 +47,24 @@ struct MessageSummary {
 #[derive(Debug, Clone)]
 pub struct CacheLayer {
     // Session metadata cache (keyed by file path)
+    #[allow(dead_code)]
     meta_cache: HashMap<PathBuf, SessionInfo>,
 
     // Preview cache (keyed by session ID) - stores formatted message previews
     preview_cache: HashMap<String, PreviewCache>,
 
     // Message summary cache (keyed by file path) - lightweight alternative to full preview
+    #[allow(dead_code)]
     summary_cache: HashMap<PathBuf, MessageSummary>,
 
     // Cache hit/miss statistics
+    #[allow(dead_code)]
     meta_hits: usize,
+    #[allow(dead_code)]
     meta_misses: usize,
+    #[allow(dead_code)]
     preview_hits: usize,
+    #[allow(dead_code)]
     preview_misses: usize,
 }
 
@@ -71,6 +83,7 @@ impl CacheLayer {
     }
 
     /// Get or insert session metadata in cache
+    #[allow(dead_code)]
     pub fn get_or_insert_meta(
         &mut self,
         path: &PathBuf,
@@ -118,11 +131,13 @@ impl CacheLayer {
     }
 
     /// Get message summary from cache if available
+    #[allow(dead_code)]
     pub fn get_summary(&mut self, path: &PathBuf) -> Option<MessageSummary> {
         self.summary_cache.get(path).cloned()
     }
 
     /// Store message summary in cache
+    #[allow(dead_code)]
     pub fn cache_summary(
         &mut self,
         path: PathBuf,
@@ -150,6 +165,7 @@ impl CacheLayer {
     }
 
     /// Clear all caches (useful for refresh operations)
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.meta_cache.clear();
         self.preview_cache.clear();
@@ -157,6 +173,7 @@ impl CacheLayer {
     }
 
     /// Get cache statistics for debugging
+    #[allow(dead_code)]
     pub fn stats(&self) -> (usize, usize, usize, usize) {
         (
             self.meta_hits,
@@ -179,8 +196,11 @@ impl Default for CacheLayer {
 pub struct SplitLayout {
     pub left_width: u16,      // Left panel width (35%)
     pub right_width: u16,     // Right panel width (65%)
+    #[allow(dead_code)]
     pub total_height: u16,
+    #[allow(dead_code)]
     pub total_width: u16,
+    #[allow(dead_code)]
     pub gap: u16,             // Space between panels
 }
 
@@ -204,11 +224,13 @@ impl SplitLayout {
     }
 
     /// Get the left panel area (0, 0, left_width, total_height)
+    #[allow(dead_code)]
     pub fn left_area(&self) -> (u16, u16, u16, u16) {
         (0, 0, self.left_width, self.total_height)
     }
 
     /// Get the right panel area
+    #[allow(dead_code)]
     pub fn right_area(&self) -> (u16, u16, u16, u16) {
         let x = self.left_width + self.gap;
         (x, 0, self.right_width, self.total_height)
@@ -282,21 +304,25 @@ impl Pagination {
     }
 
     /// Jump to first page
+    #[allow(dead_code)]
     pub fn first_page(&mut self) {
         self.current_page = 0;
     }
 
     /// Jump to last page
+    #[allow(dead_code)]
     pub fn last_page(&mut self) {
         self.current_page = self.total_pages().saturating_sub(1);
     }
 
     /// Check if there's a next page
+    #[allow(dead_code)]
     pub fn has_next(&self) -> bool {
         self.current_page + 1 < self.total_pages()
     }
 
     /// Check if there's a previous page
+    #[allow(dead_code)]
     pub fn has_prev(&self) -> bool {
         self.current_page > 0
     }
@@ -307,6 +333,7 @@ impl Pagination {
 pub struct PickerState {
     pub sessions: Vec<SessionInfo>,
     pub selected_idx: usize,
+    #[allow(dead_code)]
     pub scroll_offset_left: usize,      // For left panel scrolling
     pub scroll_offset_right: usize,     // For right panel scrolling
     pub pagination: Pagination,         // Pagination manager
@@ -343,6 +370,7 @@ impl PickerState {
     }
 
     /// Get sessions for the current page
+    #[allow(dead_code)]
     pub fn current_page_sessions(&self) -> &[SessionInfo] {
         let range = self.pagination.page_range();
         &self.sessions[range]
@@ -437,6 +465,7 @@ impl PickerState {
     }
 
     /// Get cached preview or fetch it from file
+    #[allow(dead_code)]
     pub fn get_or_fetch_preview(&mut self, session: &SessionInfo, limit: usize) -> Vec<(String, String, String)> {
         // Try to get from cache first
         if let Some(cached) = self.cache.get_preview(&session.id) {
@@ -450,11 +479,13 @@ impl PickerState {
     }
 
     /// Get cache statistics
+    #[allow(dead_code)]
     pub fn cache_stats(&self) -> (usize, usize, usize, usize) {
         self.cache.stats()
     }
 
     /// Clear the entire cache (for refresh operations)
+    #[allow(dead_code)]
     pub fn clear_cache(&mut self) {
         self.cache.clear();
     }
@@ -513,6 +544,7 @@ pub enum PickerEvent {
     // Actions
     Resume,           // Enter key - return selected session
     Delete,           // d key - confirm delete
+    #[allow(dead_code)]
     ToggleViewMode,   // f key - cycle through views
     CopySessionId,    // c key - copy to clipboard
     NewSession,       // n key - create new
@@ -523,6 +555,7 @@ pub enum PickerEvent {
 
     // Dialog control
     ConfirmAction,    // y key in modal
+    #[allow(dead_code)]
     CancelAction,     // n key in modal
 
     // Exit
@@ -596,8 +629,8 @@ impl PickerState {
             }
 
             PickerEvent::CopySessionId => {
-                if let Some(session) = self.selected_session() {
-                    // Would copy to clipboard: session.id.clone()
+                if let Some(_session) = self.selected_session() {
+                    // Would copy to clipboard: _session.id.clone()
                 }
             }
 
@@ -949,6 +982,7 @@ fn format_left_panel_sessions(sessions: &[SessionInfo], selected_idx: Option<usi
 }
 
 /// Format left panel with pagination state  - displays paginated session list with pagination info
+#[allow(dead_code)]
 fn format_left_panel_sessions_paginated(sessions: &[SessionInfo], state: &PickerState, _width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -1079,6 +1113,7 @@ fn format_right_panel_preview(session: &SessionInfo, width: u16) -> Vec<Line<'st
 }
 
 /// Format the help/legend section with key bindings and information
+#[allow(dead_code)]
 fn format_help_section() -> Vec<Line<'static>> {
     vec![
         Line::from(""),
@@ -1101,6 +1136,7 @@ fn format_help_section() -> Vec<Line<'static>> {
 }
 
 /// Format detailed session information for info modal
+#[allow(dead_code)]
 fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -1224,6 +1260,7 @@ fn extract_recent_messages_with_timestamps(path: &PathBuf, limit: usize) -> Vec<
 
 /// Format message blocks with vertical bar indicator (┃)
 /// This creates the block-style preview format used in cxresume JS
+#[allow(dead_code)]
 fn format_message_blocks(session: &SessionInfo, width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -1329,43 +1366,12 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
 /// Create a comprehensive Split View session picker overlay
 pub fn create_session_picker_overlay() -> Result<Overlay, String> {
     let sessions = get_cwd_sessions()?;
-    let state = PickerState::new(sessions);
 
-    // Render with initial state
-    let content = render_picker_view(&state)?;
+    // Create the SessionPickerOverlay directly, not a StaticOverlay
+    let picker_overlay = crate::pager_overlay::SessionPickerOverlay::new(sessions);
 
-    let refresh_callback = Box::new(|| {
-        match get_cwd_sessions() {
-            Ok(sessions) => {
-                let state = PickerState::new(sessions);
-                render_picker_view(&state)
-            }
-            Err(e) => {
-                let mut error_lines = vec![
-                    "".into(),
-                    "Error loading sessions".red().bold().into(),
-                    "".into(),
-                    format!("Details: {}", e).dim().into(),
-                    "".into(),
-                    "Troubleshooting:".bold().into(),
-                    "  • Check ~/.codex/sessions directory exists".dim().into(),
-                    "  • Verify you have read permissions".dim().into(),
-                    "  • Sessions are stored under ~/.codex/sessions/YYYY/MM/DD/".dim().into(),
-                    "".into(),
-                ];
-                error_lines.push(Line::from("────────────────────────────────────────────────────────────────").dim());
-                error_lines.push("Press q to close".dim().into());
-                Ok(error_lines)
-            }
-        }
-    });
-
-    Ok(Overlay::new_static_with_title_no_wrap_refresh(
-        content,
-        "S E S S I O N   P I C K E R   │   ↑/↓:select   j/k:scroll   Enter:resume   d:delete   q/Esc:close   │   Ctrl+X"
-            .to_string(),
-        refresh_callback,
-    ))
+    // Wrap it in the Overlay::SessionPicker variant
+    Ok(Overlay::SessionPicker(picker_overlay))
 }
 
 /// Render the picker view based on current state
