@@ -10,12 +10,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
     pub id: String,
-    #[allow(dead_code)]
     pub path: PathBuf,
-    #[allow(dead_code)]
     pub cwd: String,
     pub age: String,
-    #[allow(dead_code)]
     pub mtime: u64,
     pub message_count: usize,
     pub last_role: String,
@@ -35,7 +32,6 @@ fn get_sessions_dir() -> Result<PathBuf, String> {
 }
 
 /// Extract enhanced session metadata from .jsonl file
-/// Returns: (session_id, cwd, message_count, last_role, total_tokens, model)
 fn extract_session_meta(path: &PathBuf) -> Result<(String, String, usize, String, usize, String), String> {
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
     let reader = std::io::BufReader::new(file);
@@ -118,7 +114,6 @@ fn extract_session_meta(path: &PathBuf) -> Result<(String, String, usize, String
 }
 
 /// Extract recent messages from a session file for preview
-#[allow(dead_code)]
 fn extract_recent_messages(path: &PathBuf, limit: usize) -> Vec<(String, String)> {
     let mut messages = Vec::new();
 
@@ -256,7 +251,7 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
 }
 
 /// Format session information for display with colors and detailed info
-fn format_session_display(sessions: &[SessionInfo]) -> Vec<Line<'static>> {
+fn format_session_display(sessions: &[SessionInfo], selected_idx: Option<usize>) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     if sessions.is_empty() {
@@ -275,24 +270,36 @@ fn format_session_display(sessions: &[SessionInfo]) -> Vec<Line<'static>> {
 
     // Display sessions with enhanced information (two lines per session)
     for (idx, session) in sessions.iter().enumerate() {
+        let is_selected = selected_idx == Some(idx);
+        let marker = if is_selected { "▶ " } else { "  " };
+
         // First line: ID, age, message count, last role
         let session_line = format!(
-            "  {}. {} {} │ {} messages │ {}",
+            "{}{}.  {} {} │ {} messages │ {}",
+            marker,
             idx + 1,
             session.id.as_str().cyan(),
             format!("({})", session.age).dim(),
             session.message_count.to_string().yellow(),
             format!("Last: {}", session.last_role).green()
         );
-        lines.push(ansi_escape_line(&session_line));
+        let mut line1 = ansi_escape_line(&session_line);
+        if is_selected {
+            line1 = line1.reversed();
+        }
+        lines.push(line1);
 
         // Second line: Model and token usage
         let model_line = format!(
-            "     Model: {} │ Tokens: {}",
+            "      Model: {} │ Tokens: {}",
             session.model.as_str().cyan(),
             session.total_tokens.to_string().yellow()
         );
-        lines.push(ansi_escape_line(&model_line));
+        let mut line2 = ansi_escape_line(&model_line);
+        if is_selected {
+            line2 = line2.reversed();
+        }
+        lines.push(line2);
 
         // Add spacing between sessions
         lines.push(Line::from(""));
@@ -324,7 +331,6 @@ fn format_help_section() -> Vec<Line<'static>> {
 }
 
 /// Format detailed session information for info modal
-#[allow(dead_code)]
 fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -406,7 +412,6 @@ fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
 }
 
 /// Format session preview with recent messages
-#[allow(dead_code)]
 fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -466,9 +471,9 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
     content.push("CXRESUME SESSION PICKER - ENHANCED".bold().cyan().into());
     content.push("".into());
 
-    // Add session list with enhanced metadata
+    // Add session list with enhanced metadata (show first session as selected)
     if !sessions.is_empty() {
-        content.extend(format_session_display(&sessions));
+        content.extend(format_session_display(&sessions, Some(0)));
     } else {
         content.push("No sessions available in current working directory".yellow().into());
         content.push("".into());
@@ -501,7 +506,7 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
                 result.push("".into());
 
                 if !sessions.is_empty() {
-                    result.extend(format_session_display(&sessions));
+                    result.extend(format_session_display(&sessions, Some(0)));
                 } else {
                     result.push("No sessions available".yellow().into());
                     result.push("".into());
