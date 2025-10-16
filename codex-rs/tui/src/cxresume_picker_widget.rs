@@ -958,7 +958,7 @@ pub fn create_session_picker_overlay() -> Result<Overlay, String> {
 }
 
 /// Render the picker view based on current state
-fn render_picker_view(state: &PickerState) -> Result<Vec<Line<'static>>, String> {
+pub fn render_picker_view(state: &PickerState) -> Result<Vec<Line<'static>>, String> {
     let layout = SplitLayout::new(120, 30);
     let mut content = Vec::new();
 

@@ -27,6 +27,14 @@ use ratatui::widgets::WidgetRef;
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
+    SessionPicker(SessionPickerOverlay),
+}
+
+/// Session picker overlay integrating PickerState for interactive navigation
+pub(crate) struct SessionPickerOverlay {
+    picker_state: crate::cxresume_picker_widget::PickerState,
+    is_done: bool,
+    selected_session_id: Option<String>,
 }
 
 impl Overlay {
@@ -128,6 +136,7 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
+            Overlay::SessionPicker(o) => o.handle_event(tui, event),
         }
     }
 
@@ -135,6 +144,15 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
+            Overlay::SessionPicker(o) => o.is_done(),
+        }
+    }
+
+    /// Extract selected session ID if this is a SessionPickerOverlay
+    pub(crate) fn get_selected_session_id(&self) -> Option<String> {
+        match self {
+            Overlay::SessionPicker(o) => o.selected_session_id.clone(),
+            _ => None,
         }
     }
 }
@@ -2096,5 +2114,62 @@ mod tests {
             w2.len() >= len1,
             "wrapped length should grow or stay same after append"
         );
+    }
+}
+
+impl SessionPickerOverlay {
+    /// Create a new session picker overlay from loaded sessions
+    pub(crate) fn new(
+        sessions: Vec<crate::cxresume_picker_widget::SessionInfo>,
+    ) -> Self {
+        let picker_state = crate::cxresume_picker_widget::PickerState::new(sessions);
+        Self {
+            picker_state,
+            is_done: false,
+            selected_session_id: None,
+        }
+    }
+
+    pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+        match event {
+            TuiEvent::Key(key_event) => {
+                // Convert KeyCode to PickerEvent using the static method
+                if let Some(picker_event) =
+                    crate::cxresume_picker_widget::PickerState::key_to_event(key_event.code)
+                {
+                    // Handle the picker event and get optional session ID
+                    if let Some(session_id) = self.picker_state.handle_event(picker_event) {
+                        if session_id.is_empty() {
+                            // Empty string signals exit
+                            self.is_done = true;
+                        } else {
+                            // Non-empty string is the selected session ID
+                            self.selected_session_id = Some(session_id);
+                            self.is_done = true;
+                        }
+                    }
+                    // Schedule a frame update to reflect state changes
+                    tui.frame_requester().schedule_frame();
+                }
+                Ok(())
+            }
+            TuiEvent::Draw => {
+                // Render the picker view
+                tui.draw(u16::MAX, |frame| {
+                    // Use the render_picker_view function to generate lines
+                    if let Ok(lines) = crate::cxresume_picker_widget::render_picker_view(&self.picker_state) {
+                        let area = frame.area();
+                        use ratatui::widgets::{Paragraph, Widget};
+                        Paragraph::new(lines).render(area, frame.buffer_mut());
+                    }
+                })?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub(crate) fn is_done(&self) -> bool {
+        self.is_done
     }
 }
