@@ -164,6 +164,15 @@ impl Overlay {
             _ => None,
         }
     }
+
+    pub(crate) fn session_picker_state(
+        &self,
+    ) -> Option<crate::cxresume_picker_widget::PickerState> {
+        match self {
+            Overlay::SessionPicker(o) => Some(o.picker_state.clone()),
+            _ => None,
+        }
+    }
 }
 
 // Common pager navigation hints rendered on the first line
@@ -2127,14 +2136,14 @@ mod tests {
 }
 
 impl SessionPickerOverlay {
-    /// Create a new session picker overlay from loaded sessions
-    pub(crate) fn new(sessions: Vec<crate::cxresume_picker_widget::SessionInfo>) -> Self {
-        let picker_state = crate::cxresume_picker_widget::PickerState::new(sessions);
+    pub(crate) fn from_state(state: crate::cxresume_picker_widget::PickerState) -> Self {
+        let selected_session = state.selected_session().cloned();
+        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
         Self {
-            picker_state,
+            picker_state: state,
             is_done: false,
-            selected_session_id: None,
-            selected_session: None,
+            selected_session_id,
+            selected_session,
         }
     }
 
@@ -2192,5 +2201,14 @@ impl SessionPickerOverlay {
 
     pub(crate) fn selected_session_info(&self) -> Option<SessionInfo> {
         self.selected_session.clone()
+    }
+
+    pub(crate) fn replace_state(&mut self, state: crate::cxresume_picker_widget::PickerState) {
+        let selected_session = state.selected_session().cloned();
+        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
+        self.picker_state = state;
+        self.selected_session_id = selected_session_id;
+        self.selected_session = selected_session;
+        self.is_done = false;
     }
 }

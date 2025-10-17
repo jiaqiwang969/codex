@@ -1744,14 +1744,16 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
     lines
 }
 
+/// Build picker state for the current working directory.
+pub fn load_picker_state() -> Result<PickerState, String> {
+    let sessions = get_cwd_sessions()?;
+    Ok(PickerState::new(sessions))
+}
+
 /// Create a comprehensive Split View session picker overlay
 pub fn create_session_picker_overlay() -> Result<Overlay, String> {
-    let sessions = get_cwd_sessions()?;
-
-    // Create the SessionPickerOverlay directly, not a StaticOverlay
-    let picker_overlay = crate::pager_overlay::SessionPickerOverlay::new(sessions);
-
-    // Wrap it in the Overlay::SessionPicker variant
+    let state = load_picker_state()?;
+    let picker_overlay = crate::pager_overlay::SessionPickerOverlay::from_state(state);
     Ok(Overlay::SessionPicker(picker_overlay))
 }
 

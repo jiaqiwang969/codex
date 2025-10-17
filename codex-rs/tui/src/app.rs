@@ -35,8 +35,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::task::JoinHandle;
 // use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -71,6 +73,9 @@ pub(crate) struct App {
 
     // Esc-backtracking state grouped
     pub(crate) backtrack: crate::app_backtrack::BacktrackState,
+
+    cxresume_cache: Option<crate::cxresume_picker_widget::PickerState>,
+    cxresume_idle: CxresumeIdleLoader,
 }
 
 impl App {
@@ -152,7 +157,11 @@ impl App {
             has_emitted_history_lines: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
+            cxresume_cache: None,
+            cxresume_idle: CxresumeIdleLoader::new(Duration::from_secs(2)),
         };
+
+        app.cxresume_idle.trigger_immediate(&app.app_event_tx);
 
         let tui_events = tui.event_stream();
         tokio::pin!(tui_events);
@@ -174,7 +183,7 @@ impl App {
         })
     }
 
-    fn open_or_refresh_session_picker(&mut self, tui: &mut tui::Tui) {
+    pub(crate) fn open_or_refresh_session_picker(&mut self, tui: &mut tui::Tui) {
         if let Some(Overlay::SessionPicker(picker)) = self.overlay.as_mut() {
             if let Err(err) = picker.refresh_sessions() {
                 self.chat_widget
@@ -185,10 +194,25 @@ impl App {
             return;
         }
 
-        match crate::cxresume_picker_widget::create_session_picker_overlay() {
+        let overlay = if let Some(state) = self.cxresume_cache.clone() {
+            Ok(Overlay::SessionPicker(
+                crate::pager_overlay::SessionPickerOverlay::from_state(state),
+            ))
+        } else {
+            crate::cxresume_picker_widget::create_session_picker_overlay()
+        };
+
+        match overlay {
             Ok(overlay) => {
                 let _ = tui.enter_alt_screen();
                 self.overlay = Some(overlay);
+                if let Some(state) = self
+                    .overlay
+                    .as_ref()
+                    .and_then(|overlay| overlay.session_picker_state())
+                {
+                    self.update_cxresume_cache(state);
+                }
                 tui.frame_requester().schedule_frame();
             }
             Err(err) => {
@@ -199,11 +223,26 @@ impl App {
         }
     }
 
+    pub(crate) fn update_cxresume_cache(
+        &mut self,
+        state: crate::cxresume_picker_widget::PickerState,
+    ) {
+        self.cxresume_cache = Some(state);
+    }
+
+    pub(crate) fn reset_cxresume_idle(&mut self) {
+        self.cxresume_idle.on_user_activity(&self.app_event_tx);
+    }
+
     pub(crate) async fn handle_tui_event(
         &mut self,
         tui: &mut tui::Tui,
         event: TuiEvent,
     ) -> Result<bool> {
+        if matches!(event, TuiEvent::Key(_) | TuiEvent::Paste(_)) {
+            self.reset_cxresume_idle();
+        }
+
         if self.overlay.is_some() {
             let _ = self.handle_backtrack_overlay_event(tui, event).await?;
         } else {
@@ -413,6 +452,48 @@ impl App {
             }
             AppEvent::OpenReviewCustomPrompt => {
                 self.chat_widget.show_review_custom_prompt();
+            }
+            AppEvent::CxresumeIdleCheck => {
+                if self
+                    .cxresume_idle
+                    .handle_idle_check(self.overlay.is_some(), &self.app_event_tx)
+                {
+                    let tx = self.app_event_tx.clone();
+                    tokio::spawn(async move {
+                        let result = tokio::task::spawn_blocking(
+                            crate::cxresume_picker_widget::load_picker_state,
+                        )
+                        .await;
+                        match result {
+                            Ok(Ok(state)) => {
+                                let _ = tx.send(AppEvent::CxresumePrewarmReady(state));
+                            }
+                            Ok(Err(err)) => {
+                                let _ = tx.send(AppEvent::CxresumePrewarmFailed(err));
+                            }
+                            Err(join_err) => {
+                                let _ =
+                                    tx.send(AppEvent::CxresumePrewarmFailed(join_err.to_string()));
+                            }
+                        }
+                    });
+                }
+            }
+            AppEvent::CxresumePrewarmReady(state) => {
+                tracing::debug!(
+                    "cxresume prewarm completed with {} sessions",
+                    state.sessions.len()
+                );
+                self.update_cxresume_cache(state.clone());
+                self.cxresume_idle.job_complete(&self.app_event_tx, true);
+                if let Some(Overlay::SessionPicker(picker)) = self.overlay.as_mut() {
+                    picker.replace_state(state);
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            AppEvent::CxresumePrewarmFailed(err) => {
+                tracing::debug!("cxresume prewarm failed: {}", err);
+                self.cxresume_idle.job_complete(&self.app_event_tx, false);
             }
             AppEvent::FullScreenApprovalRequest(request) => match request {
                 ApprovalRequest::ApplyPatch { cwd, changes, .. } => {
@@ -627,6 +708,8 @@ mod tests {
             enhanced_keys_supported: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
+            cxresume_cache: None,
+            cxresume_idle: CxresumeIdleLoader::new(Duration::from_secs(2)),
         }
     }
 
@@ -711,29 +794,106 @@ mod tests {
         assert_eq!(prefill, "follow-up (edited)");
     }
 }
-impl App {
-    fn open_or_refresh_session_picker(&mut self, tui: &mut tui::Tui) {
-        if let Some(Overlay::SessionPicker(picker)) = self.overlay.as_mut() {
-            if let Err(err) = picker.refresh_sessions() {
-                self.chat_widget
-                    .add_error_message(format!("Failed to refresh sessions: {err}"));
-                tracing::warn!("Failed to refresh session picker: {}", err);
-            }
-            tui.frame_requester().schedule_frame();
-            return;
+
+struct CxresumeIdleLoader {
+    idle_after: Duration,
+    last_activity: Instant,
+    job_in_flight: bool,
+    cooldown_until: Option<Instant>,
+    pending_check: Option<JoinHandle<()>>,
+}
+
+impl CxresumeIdleLoader {
+    fn new(idle_after: Duration) -> Self {
+        Self {
+            idle_after,
+            last_activity: Instant::now(),
+            job_in_flight: false,
+            cooldown_until: None,
+            pending_check: None,
+        }
+    }
+
+    fn on_user_activity(&mut self, tx: &AppEventSender) {
+        self.last_activity = Instant::now();
+        if !self.job_in_flight {
+            self.schedule_after(tx, self.idle_after);
+        }
+    }
+
+    fn handle_idle_check(&mut self, overlay_active: bool, tx: &AppEventSender) -> bool {
+        if self.job_in_flight {
+            return false;
+        }
+        if overlay_active {
+            self.schedule_after(tx, self.idle_after);
+            return false;
         }
 
-        match crate::cxresume_picker_widget::create_session_picker_overlay() {
-            Ok(overlay) => {
-                let _ = tui.enter_alt_screen();
-                self.overlay = Some(overlay);
-                tui.frame_requester().schedule_frame();
-            }
-            Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("Failed to load sessions: {err}"));
-                tracing::warn!("Failed to create session picker: {}", err);
+        let now = Instant::now();
+        if let Some(deadline) = self.cooldown_until {
+            if now < deadline {
+                let remaining = deadline.saturating_duration_since(now);
+                self.schedule_after(tx, remaining);
+                return false;
             }
         }
+
+        let since_activity = now.saturating_duration_since(self.last_activity);
+        if since_activity < self.idle_after {
+            let remaining = self.idle_after - since_activity;
+            self.schedule_after(tx, remaining);
+            return false;
+        }
+
+        self.job_in_flight = true;
+        self.cancel_pending();
+        true
+    }
+
+    fn job_complete(&mut self, tx: &AppEventSender, success: bool) {
+        self.job_in_flight = false;
+        self.last_activity = Instant::now();
+        let cooldown = if success {
+            Duration::from_secs(300)
+        } else {
+            Duration::from_secs(60)
+        };
+        self.cooldown_until = Some(self.last_activity + cooldown);
+        self.schedule_after(tx, cooldown);
+    }
+
+    fn cancel_pending(&mut self) {
+        if let Some(handle) = self.pending_check.take() {
+            handle.abort();
+        }
+    }
+
+    fn schedule_after(&mut self, tx: &AppEventSender, delay: Duration) {
+        if self.job_in_flight {
+            return;
+        }
+        self.cancel_pending();
+        let tx = tx.clone();
+        self.pending_check = Some(tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            let _ = tx.send(AppEvent::CxresumeIdleCheck);
+        }));
+    }
+
+    fn trigger_immediate(&mut self, tx: &AppEventSender) {
+        if self.job_in_flight {
+            return;
+        }
+        self.last_activity = Instant::now()
+            .checked_sub(self.idle_after)
+            .unwrap_or_else(Instant::now);
+        self.schedule_after(tx, Duration::ZERO);
+    }
+}
+
+impl Drop for CxresumeIdleLoader {
+    fn drop(&mut self) {
+        self.cancel_pending();
     }
 }

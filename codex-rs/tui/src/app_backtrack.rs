@@ -155,11 +155,19 @@ impl App {
         session: Option<SessionInfo>,
     ) -> Result<()> {
         let _ = tui.leave_alt_screen();
+        if let Some(state) = self
+            .overlay
+            .as_ref()
+            .and_then(|overlay| overlay.session_picker_state())
+        {
+            self.update_cxresume_cache(state);
+        }
         if !self.deferred_history_lines.is_empty() {
             let lines = std::mem::take(&mut self.deferred_history_lines);
             tui.insert_history_lines(lines);
         }
         self.overlay = None;
+        self.reset_cxresume_idle();
         self.backtrack.overlay_preview_active = false;
         if let Some(id) = selection_id {
             if id == cxresume_picker_widget::NEW_SESSION_SENTINEL {

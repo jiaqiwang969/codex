@@ -6,6 +6,7 @@ use codex_core::protocol::Event;
 use codex_file_search::FileMatch;
 
 use crate::bottom_pane::ApprovalRequest;
+use crate::cxresume_picker_widget::PickerState;
 use crate::history_cell::HistoryCell;
 
 use codex_core::protocol::AskForApproval;
@@ -90,4 +91,13 @@ pub(crate) enum AppEvent {
 
     /// Open the approval popup.
     FullScreenApprovalRequest(ApprovalRequest),
+
+    /// Triggered after a period without user interaction to prewarm cxresume state.
+    CxresumeIdleCheck,
+
+    /// Result of background cxresume prewarm.
+    CxresumePrewarmReady(PickerState),
+
+    /// Background cxresume prewarm failed.
+    CxresumePrewarmFailed(String),
 }
