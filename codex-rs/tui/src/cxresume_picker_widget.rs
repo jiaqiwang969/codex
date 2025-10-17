@@ -14,11 +14,15 @@ use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
+use serde::Deserialize;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::BufRead;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::time::SystemTime;
 use tracing::warn;
 
 #[cfg(not(target_os = "android"))]
@@ -26,6 +30,24 @@ use arboard::Clipboard;
 
 pub const NEW_SESSION_SENTINEL: &str = "__cxresume_new_session__";
 const FULL_PREVIEW_WRAP_WIDTH: usize = 76;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TumixState {
+    Running,
+    Completed,
+    Failed,
+    Stalled,
+}
+
+#[derive(Debug, Clone)]
+pub struct TumixIndicator {
+    pub run_id: String,
+    pub agent_id: String,
+    pub agent_name: Option<String>,
+    pub branch: Option<String>,
+    pub state: TumixState,
+    pub error: Option<String>,
+}
 
 /// Enhanced session metadata with comprehensive information
 #[derive(Debug, Clone)]
@@ -40,6 +62,97 @@ pub struct SessionInfo {
     #[allow(dead_code)]
     pub total_tokens: usize,
     pub model: String,
+    pub tumix: Option<TumixIndicator>,
+}
+
+#[derive(Default)]
+struct TumixStatusIndex {
+    by_session: HashMap<String, TimedIndicator>,
+    by_path: HashMap<PathBuf, TimedIndicator>,
+}
+
+#[derive(Clone)]
+struct TimedIndicator {
+    indicator: TumixIndicator,
+    modified: Option<SystemTime>,
+}
+
+impl TumixStatusIndex {
+    fn insert(
+        &mut self,
+        session_id: &str,
+        path: Option<PathBuf>,
+        indicator: TumixIndicator,
+        modified: Option<SystemTime>,
+    ) {
+        let entry = TimedIndicator {
+            indicator,
+            modified,
+        };
+        self.upsert_session(session_id, entry.clone());
+        if let Some(path) = path {
+            self.upsert_path(path, entry);
+        }
+    }
+
+    fn upsert_session(&mut self, session_id: &str, entry: TimedIndicator) {
+        match self.by_session.get_mut(session_id) {
+            Some(existing) => {
+                if should_replace(existing, &entry) {
+                    *existing = entry;
+                }
+            }
+            None => {
+                self.by_session.insert(session_id.to_string(), entry);
+            }
+        }
+    }
+
+    fn upsert_path(&mut self, path: PathBuf, entry: TimedIndicator) {
+        match self.by_path.get_mut(&path) {
+            Some(existing) => {
+                if should_replace(existing, &entry) {
+                    *existing = entry;
+                }
+            }
+            None => {
+                self.by_path.insert(path, entry);
+            }
+        }
+    }
+
+    fn lookup(&self, session_id: &str, path: &Path) -> Option<TumixIndicator> {
+        if let Some(entry) = self.by_session.get(session_id) {
+            return Some(entry.indicator.clone());
+        }
+
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if let Some(entry) = self.by_path.get(&canonical) {
+            return Some(entry.indicator.clone());
+        }
+        self.by_path.get(path).map(|entry| entry.indicator.clone())
+    }
+}
+
+fn should_replace(current: &TimedIndicator, candidate: &TimedIndicator) -> bool {
+    let current_rank = state_rank(current.indicator.state);
+    let candidate_rank = state_rank(candidate.indicator.state);
+
+    match (current.modified, candidate.modified) {
+        (Some(cur), Some(new)) => new > cur,
+        (None, Some(_)) => true,
+        (Some(_), None) => candidate_rank > current_rank,
+        (None, None) => candidate_rank > current_rank,
+    }
+}
+
+fn state_rank(state: TumixState) -> u8 {
+    match state {
+        TumixState::Completed => 4,
+        TumixState::Failed => 3,
+        TumixState::Running => 2,
+        TumixState::Stalled => 1,
+    }
 }
 
 /// Cached preview data for a session (messages and metadata)
@@ -355,6 +468,8 @@ pub struct PickerState {
     pub modal_active: bool,    // Delete or edit confirmation dialog
     pub modal_message: String, // Message to display in modal
     pub cache: CacheLayer,     // Multi-layered cache for performance
+    animation_tick: usize,
+    has_running_tumix: bool,
 }
 
 impl PickerState {
@@ -362,6 +477,7 @@ impl PickerState {
     pub fn new(sessions: Vec<SessionInfo>) -> Self {
         let items_count = sessions.len();
         let pagination = Pagination::new(items_count, 30); // 30 items per page
+        let running = has_running_tumix(&sessions);
         let mut picker_state = PickerState {
             sessions,
             selected_idx: 0,
@@ -373,6 +489,8 @@ impl PickerState {
             modal_active: false,
             modal_message: String::new(),
             cache: CacheLayer::new(),
+            animation_tick: 0,
+            has_running_tumix: running,
         };
         // Prefetch the first visible page of sessions on initial load
         picker_state.prefetch_visible_page();
@@ -565,6 +683,7 @@ impl PickerState {
         if self.sessions.is_empty() {
             self.selected_idx = 0;
             self.scroll_offset_right = 0;
+            self.refresh_running_flag();
             return;
         }
 
@@ -581,6 +700,7 @@ impl PickerState {
 
         self.prefetch_visible_page();
         self.prefetch_adjacent_sessions();
+        self.refresh_running_flag();
     }
 
     fn focus_left(&mut self) {
@@ -592,6 +712,36 @@ impl PickerState {
     fn focus_right(&mut self) {
         if matches!(self.view_mode, ViewMode::Split | ViewMode::FullPreview) {
             self.focus = FocusPane::RightPreview;
+        }
+    }
+
+    pub fn advance_animation(&mut self) -> bool {
+        if self.has_running_tumix {
+            self.animation_tick = self.animation_tick.wrapping_add(1);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn animation_frame(&self) -> usize {
+        self.animation_tick
+    }
+
+    fn refresh_running_flag(&mut self) {
+        self.has_running_tumix = has_running_tumix(&self.sessions);
+        if !self.has_running_tumix {
+            self.animation_tick = 0;
+        }
+    }
+
+    pub fn has_running_tumix(&self) -> bool {
+        self.has_running_tumix
+    }
+
+    pub fn inherit_animation(&mut self, other: &PickerState) {
+        if self.has_running_tumix && other.has_running_tumix() {
+            self.animation_tick = other.animation_frame();
         }
     }
 }
@@ -1223,6 +1373,7 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
                                     last_role,
                                     total_tokens: tokens,
                                     model,
+                                    tumix: None,
                                 });
                             }
                         }
@@ -1269,6 +1420,155 @@ fn should_include_session(session_cwd: &str, cwd: &Path) -> bool {
         Ok(real_path) => real_path == cwd || real_path.starts_with(cwd),
         Err(_) => false,
     }
+}
+
+fn has_running_tumix(sessions: &[SessionInfo]) -> bool {
+    sessions.iter().any(|session| {
+        matches!(
+            session.tumix.as_ref().map(|t| t.state),
+            Some(TumixState::Running)
+        )
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct TumixSessionRecord {
+    agent_id: String,
+    agent_name: String,
+    status: TumixStatusRaw,
+    branch: String,
+    session_id: Option<String>,
+    #[allow(dead_code)]
+    commit: Option<String>,
+    jsonl_path: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TumixStatusRaw {
+    Running,
+    Completed,
+    Failed,
+}
+
+fn load_tumix_status_index() -> TumixStatusIndex {
+    let mut index = TumixStatusIndex::default();
+    let tumix_dir = PathBuf::from(".tumix");
+    let dir_iter = match fs::read_dir(&tumix_dir) {
+        Ok(iter) => iter,
+        Err(_) => return index,
+    };
+
+    let now = SystemTime::now();
+
+    for entry in dir_iter.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if !matches!(
+            path.file_name().and_then(OsStr::to_str),
+            Some(name) if name.starts_with("round1_sessions_") && name.ends_with(".json")
+        ) {
+            continue;
+        }
+
+        let run_id = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .and_then(|name| name.strip_prefix("round1_sessions_"))
+            .and_then(|rest| rest.strip_suffix(".json"))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let metadata = match entry.metadata() {
+            Ok(meta) => Some(meta),
+            Err(_) => None,
+        };
+        let modified = metadata.and_then(|meta| meta.modified().ok());
+
+        let content = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        let records: Vec<TumixSessionRecord> = match serde_json::from_str(&content) {
+            Ok(records) => records,
+            Err(_) => continue,
+        };
+
+        for record in records {
+            let session_id = match record.session_id.as_ref() {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let mut state = match record.status {
+                TumixStatusRaw::Running => TumixState::Running,
+                TumixStatusRaw::Completed => TumixState::Completed,
+                TumixStatusRaw::Failed => TumixState::Failed,
+            };
+
+            if state == TumixState::Running {
+                if let Some(modified) = modified {
+                    if now
+                        .duration_since(modified)
+                        .unwrap_or(Duration::from_secs(0))
+                        > Duration::from_secs(300)
+                    {
+                        state = TumixState::Stalled;
+                    }
+                }
+            }
+
+            let agent_name = {
+                let name = record.agent_name.trim();
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                }
+            };
+
+            let branch = {
+                let branch = record.branch.trim();
+                if branch.is_empty() {
+                    None
+                } else {
+                    Some(branch.to_string())
+                }
+            };
+
+            let error = record
+                .error
+                .as_ref()
+                .map(|e| e.trim())
+                .filter(|e| !e.is_empty())
+                .map(|e| e.to_string());
+
+            let path_opt = record.jsonl_path.as_ref().and_then(|p| {
+                let raw = PathBuf::from(p);
+                match raw.canonicalize() {
+                    Ok(real) => Some(real),
+                    Err(_) => Some(raw),
+                }
+            });
+
+            let indicator = TumixIndicator {
+                run_id: run_id.clone(),
+                agent_id: record.agent_id.clone(),
+                agent_name,
+                branch,
+                state,
+                error,
+            };
+
+            index.insert(session_id, path_opt, indicator, modified);
+        }
+    }
+
+    index
 }
 
 #[allow(dead_code)]
@@ -1347,6 +1647,89 @@ fn format_left_panel_sessions(
     lines
 }
 
+fn tumix_indicator_text(session: &SessionInfo, frame: usize) -> Option<String> {
+    let indicator = session.tumix.as_ref()?;
+    let symbol = match indicator.state {
+        TumixState::Completed => "●".green().bold().to_string(),
+        TumixState::Failed => "●".red().bold().to_string(),
+        TumixState::Stalled => "●".magenta().bold().to_string(),
+        TumixState::Running => {
+            let frames = ["◐", "◓", "◑", "◒"];
+            frames[frame % frames.len()].yellow().bold().to_string()
+        }
+    };
+    Some(symbol)
+}
+
+fn tumix_badge_text() -> String {
+    "[Tumix]".magenta().bold().to_string()
+}
+
+fn tumix_line_two_text(session: &SessionInfo) -> Option<String> {
+    let indicator = session.tumix.as_ref()?;
+    let mut parts: Vec<String> = Vec::new();
+    let agent_label = format!("Agent {}", indicator.agent_id);
+    parts.push(agent_label.as_str().dim().to_string());
+    if let Some(agent) = &indicator.agent_name {
+        parts.push(agent.as_str().bold().to_string());
+    }
+    if let Some(branch) = &indicator.branch {
+        parts.push(branch.as_str().cyan().to_string());
+    }
+    parts.push(session.cwd.as_str().dim().to_string());
+    Some(format!("   {}", parts.join(" • ")))
+}
+
+fn tumix_line_three_suffix(session: &SessionInfo) -> String {
+    let indicator = match session.tumix.as_ref() {
+        Some(indicator) => indicator,
+        None => return String::new(),
+    };
+
+    let mut parts: Vec<String> = Vec::new();
+    let run_label = format!("run {}", short_run_id(&indicator.run_id));
+    parts.push(run_label.as_str().dim().to_string());
+
+    if matches!(indicator.state, TumixState::Failed | TumixState::Stalled) {
+        if let Some(error) = indicator.error.as_ref() {
+            let truncated = truncate_error(error);
+            parts.push(truncated.as_str().red().to_string());
+        }
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" • {}", parts.join(" • "))
+    }
+}
+
+fn short_run_id(run_id: &str) -> String {
+    if run_id.len() <= 8 {
+        run_id.to_string()
+    } else {
+        run_id[run_id.len().saturating_sub(8)..].to_string()
+    }
+}
+
+fn truncate_error(error: &str) -> String {
+    let first_line = error.lines().next().unwrap_or("").trim();
+    if first_line.len() <= 64 {
+        first_line.to_string()
+    } else {
+        let truncated: String = first_line.chars().take(61).collect();
+        format!("{truncated}…")
+    }
+}
+
+fn tumix_state_text(state: TumixState) -> String {
+    match state {
+        TumixState::Completed => "completed".green().bold().to_string(),
+        TumixState::Failed => "failed".red().bold().to_string(),
+        TumixState::Running => "running".yellow().bold().to_string(),
+        TumixState::Stalled => "stalled".magenta().bold().to_string(),
+    }
+}
 /// Format left panel with pagination state  - displays paginated session list with pagination info
 #[allow(dead_code)]
 fn format_left_panel_sessions_paginated(
@@ -1378,46 +1761,52 @@ fn format_left_panel_sessions_paginated(
 
     // Display sessions for current page (3 lines per session + 1 blank line spacing)
     for (page_idx, session) in sessions.iter().enumerate() {
-        // Calculate absolute index in the full list
         let abs_idx = state.pagination.page_start() + page_idx;
         let is_selected = state.selected_idx == abs_idx;
         let marker = if is_selected { "▶" } else { " " };
 
-        // Line 1: ID, age
-        let line1_text = format!(
-            " {} {}  ({})",
-            marker,
-            session.id.as_str().cyan(),
-            session.age.as_str().dim()
-        );
+        let mut line1_text = format!(" {}", marker);
+        if let Some(indicator) = tumix_indicator_text(session, state.animation_frame()) {
+            line1_text.push(' ');
+            line1_text.push_str(&indicator);
+        }
+        if session.tumix.is_some() {
+            line1_text.push(' ');
+            line1_text.push_str(&tumix_badge_text());
+        }
+        line1_text.push(' ');
+        line1_text.push_str(&session.id.as_str().cyan().to_string());
+        line1_text.push_str("  ");
+        let age = format!("({})", session.age);
+        line1_text.push_str(&age.as_str().dim().to_string());
+
         let mut line1 = ansi_escape_line(&line1_text);
         if is_selected {
             line1 = line1.reversed();
         }
         lines.push(line1);
 
-        // Line 2: CWD or path
-        let line2_text = format!("   {}", session.cwd.as_str().dim());
+        let line2_text = tumix_line_two_text(session)
+            .unwrap_or_else(|| format!("   {}", session.cwd.as_str().dim()));
         let mut line2 = ansi_escape_line(&line2_text);
         if is_selected {
             line2 = line2.reversed();
         }
         lines.push(line2);
 
-        // Line 3: Messages + Model + Last role
-        let line3_text = format!(
+        let base_line3 = format!(
             "   {} messages • {} • {}",
             session.message_count.to_string().yellow(),
             session.model.as_str().cyan(),
             format!("Last: {}", session.last_role).green()
         );
+        let line3_text = format!("{base_line3}{}", tumix_line_three_suffix(session));
         let mut line3 = ansi_escape_line(&line3_text);
         if is_selected {
             line3 = line3.reversed();
         }
         lines.push(line3);
 
-        // Spacing
         lines.push(Line::from(""));
     }
 
@@ -1572,6 +1961,42 @@ fn format_session_details(session: &SessionInfo) -> Vec<Line<'static>> {
         "  File Path:      {}",
         session.path.display().to_string().as_str().dim()
     )));
+
+    if let Some(tumix) = &session.tumix {
+        lines.push(Line::from(""));
+        lines.push("TUMIX".bold().magenta().into());
+        lines.push(ansi_escape_line(&format!(
+            "  State:          {}",
+            tumix_state_text(tumix.state)
+        )));
+        lines.push(ansi_escape_line(&format!(
+            "  Run ID:         {}",
+            tumix.run_id.as_str().dim()
+        )));
+        lines.push(ansi_escape_line(&format!(
+            "  Agent ID:       {}",
+            tumix.agent_id.as_str().cyan()
+        )));
+        if let Some(agent) = tumix.agent_name.as_deref() {
+            lines.push(ansi_escape_line(&format!(
+                "  Agent:          {}",
+                agent.bold()
+            )));
+        }
+        if let Some(branch) = tumix.branch.as_deref() {
+            lines.push(ansi_escape_line(&format!(
+                "  Branch:         {}",
+                branch.cyan()
+            )));
+        }
+        if let Some(error) = tumix.error.as_deref() {
+            let truncated = truncate_error(error);
+            lines.push(ansi_escape_line(&format!(
+                "  Notes:          {}",
+                truncated.as_str().red()
+            )));
+        }
+    }
 
     lines.push(Line::from(""));
     lines
@@ -1746,7 +2171,13 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
 
 /// Build picker state for the current working directory.
 pub fn load_picker_state() -> Result<PickerState, String> {
-    let sessions = get_cwd_sessions()?;
+    let mut sessions = get_cwd_sessions()?;
+    let tumix_index = load_tumix_status_index();
+    for session in &mut sessions {
+        if let Some(indicator) = tumix_index.lookup(&session.id, &session.path) {
+            session.tumix = Some(indicator);
+        }
+    }
     Ok(PickerState::new(sessions))
 }
 

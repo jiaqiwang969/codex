@@ -2189,6 +2189,9 @@ impl SessionPickerOverlay {
                 tui.draw(u16::MAX, |frame| {
                     crate::cxresume_picker_widget::render_picker_view(frame, &self.picker_state);
                 })?;
+                if self.picker_state.advance_animation() {
+                    tui.frame_requester().schedule_frame();
+                }
                 Ok(())
             }
             _ => Ok(()),
@@ -2203,7 +2206,8 @@ impl SessionPickerOverlay {
         self.selected_session.clone()
     }
 
-    pub(crate) fn replace_state(&mut self, state: crate::cxresume_picker_widget::PickerState) {
+    pub(crate) fn replace_state(&mut self, mut state: crate::cxresume_picker_widget::PickerState) {
+        state.inherit_animation(&self.picker_state);
         let selected_session = state.selected_session().cloned();
         let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
         self.picker_state = state;

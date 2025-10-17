@@ -1,0 +1,101 @@
+\documentclass[12pt]{article}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{xeCJK}
+\setCJKmainfont{PingFang SC}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{xcolor}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue
+}
+
+\title{cxresume 功能流程说明}
+\author{Codex 自动整理}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{项目概览}
+cxresume 是一个面向 Codex CLI 的会话恢复工具，核心能力是从历史日志中挑选或搜索会话，并调用 \texttt{codex resume <sessionId>} 继续对话。入口文件位于 \texttt{src/index.js}，通过命令行参数决定运行模式，并协调配置读取、日志扫描、交互式界面与 Codex 启动流程。
+
+\section{主要模块}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.22\textwidth}p{0.72\textwidth}}
+\textbf{配置管理} & \texttt{src/utils/config.js}：读取 \texttt{\~{}/.config/cxresume/config.json}，合并命令行覆盖项，解析会话根目录。 \\
+\textbf{日志发现} & \texttt{src/utils/sessionFinder.js}：基于 fast-glob 搜索 \texttt{*.jsonl}，返回按修改时间倒序的文件列表。 \\
+\textbf{元信息提取} & \texttt{src/utils/metaQuick.js}：流式读取日志首行或首个事件，快速拿到 \texttt{sessionId}、\texttt{cwd} 与起始时间。 \\
+\textbf{日志解析与预览} & \texttt{src/utils/parser.js}、\texttt{src/utils/preview.js}：兼容新旧日志格式，提取对话消息并生成彩色预览文本。 \\
+\textbf{交互界面} & \texttt{src/ui.js} 提供基于 Enquirer 的简易选择器；\texttt{src/tui/splitPicker.js} 提供 Blessed 分屏 TUI，支持分页、删除、复制和附加参数。 \\
+\textbf{Codex 调用} & \texttt{src/utils/launch.js}：使用 \texttt{execaCommand} 在 shell 中运行构造好的 Codex 命令。 \\
+\textbf{工作区筛选} & \texttt{src/utils/metaQuick.js}：根据日志内的 \texttt{cwd} 元数据筛选当前目录及子目录的会话记录。 \\
+\end{longtable}
+
+\section{CLI 主流程}
+\begin{enumerate}[label=\arabic*.]
+  \item 解析参数（\texttt{src/index.js:31}）。处理 \texttt{cxresume cwd/.}、\texttt{--list}、\texttt{--search}、\texttt{--preview} 等开关。
+  \item 判断是否输出帮助或版本，并在需要时直接返回。
+  \item 读取配置并解析日志根目录（\texttt{src/index.js:127}），若目录不存在尝试旧版路径。
+  \item 工作区模式下，读取或创建 \texttt{.cxresume\_sessions}，并根据 ID 反查日志文件，准备预设列表（\texttt{src/index.js:173}）。
+  \item 根据不同入口执行：
+  \begin{itemize}[leftmargin=2em]
+    \item \textbf{列表模式}：打印最近 100 条会话信息。
+    \item \textbf{直接打开}：使用 \texttt{--open} 指定的文件。
+    \item \textbf{搜索模式}：全文检索命中后进入分屏 TUI。
+    \item \textbf{交互模式}：默认进入分屏 TUI；若指定 \texttt{--legacy-ui} 则使用 AutoComplete 列表。
+  \end{itemize}
+  \item 在交互界面中，用户可浏览预览、附加参数、删除日志、复制 ID，或在工作区模式下新建记录。
+  \item 选择目标会话后，读取元信息确认 \texttt{sessionId}，可选打印最近消息作为预览。
+  \item 组合命令 \texttt{codex resume <sessionId>}，附加用户输入的额外参数；如指定 \texttt{--print} 或 \texttt{--no-launch} 则仅输出而不执行。
+  \item 通过 \texttt{launchCodexRaw} 启动命令，继承当前终端输入输出，恢复 Codex 会话。
+\end{enumerate}
+
+\section{工作区流程补充}
+当以 \texttt{cxresume cwd} 运行时：
+\begin{itemize}[leftmargin=2em]
+  \item 若 \texttt{.cxresume\_sessions} 不存在，工具会调用 \texttt{codex e ...} 启动一次新会话，解析输出中的 \texttt{session id} 并写入文件。
+  \item \texttt{-n}/\texttt{--new} 会强制创建并立刻恢复一个全新的工作区会话。
+  \item \texttt{-l}/\texttt{--latest} 则直接恢复最近一次记录的会话，不进入 TUI。
+  \item 分屏 TUI 内部的 \texttt{s} 快捷键可即时触发“创建并恢复”流程。
+\end{itemize}
+
+\section{搜索与预览}
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{搜索}：\texttt{src/utils/search.js} 对每个日志文件流式扫描消息内容，统计命中次数并按时间优先排序。
+  \item \textbf{预览}：\texttt{selectRecentDialogMessages} 过滤最近若干条用户与助手对话，配合 TUI 中的彩色渲染，用于快速回忆上下文。
+  \item \textbf{性能优化}：元信息、预览内容使用内存缓存，避免重复解析大型日志。
+\end{itemize}
+
+\section{流程图}
+图~\ref{fig:flow} 展示了从命令行入口到 Codex 启动的关键流程，涵盖工作区分支与交互界面逻辑。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth,height=0.9\textheight,keepaspectratio]{cxresume-flow-diagram.pdf}
+  \caption{cxresume 主流程示意}
+  \label{fig:flow}
+\end{figure}
+
+\section{关键交互要点}
+\begin{itemize}[leftmargin=2em]
+  \item TUI 在左侧列表显示会话元信息（ID、更新时间、工作目录、消息统计），右侧滚动展示会话片段。
+  \item 支持快捷键：\texttt{↑/↓} 导航、\texttt{←/→} 翻页、\texttt{n} 在选中会话工作目录中创建新会话、\texttt{d} 删除会话文件、\texttt{-} 临时追加参数、\texttt{c} 复制 ID、\texttt{f} 切换全屏预览。
+  \item 删除操作带确认弹窗，避免误删；工作区模式下对不属于当前目录的文件会提示并阻止恢复。
+\end{itemize}
+
+\section{扩展点与注意事项}
+\begin{itemize}[leftmargin=2em]
+  \item 预览默认关闭，可通过配置或 \texttt{--preview} 打开；注意大文件解析耗时。
+  \item 如需自定义 Codex 命令或日志根目录，可在配置文件或命令行参数中覆盖。
+  \item 工具假设日志目录结构与 Codex CLI 默认一致，若目录为空会给出提示信息。
+\end{itemize}
+
+\end{document}
