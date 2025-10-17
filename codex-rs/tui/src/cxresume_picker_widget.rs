@@ -11,6 +11,7 @@ use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
@@ -30,6 +31,14 @@ use arboard::Clipboard;
 
 pub const NEW_SESSION_SENTINEL: &str = "__cxresume_new_session__";
 const FULL_PREVIEW_WRAP_WIDTH: usize = 76;
+const THEME_GRAY: Color = Color::Rgb(0x80, 0x80, 0x80);
+const THEME_GREEN: Color = Color::Rgb(0x5a, 0xf7, 0x8e);
+const THEME_YELLOW: Color = Color::Rgb(0xf3, 0xf9, 0x9d);
+const THEME_ORANGE: Color = Color::Rgb(0xff, 0x95, 0x00);
+const THEME_PURPLE: Color = Color::Rgb(0xbf, 0x5a, 0xf2);
+const THEME_CYAN: Color = Color::Rgb(0x5f, 0xbe, 0xaa);
+const THEME_BLUE: Color = Color::Rgb(0x6a, 0xc8, 0xff);
+const THEME_PINK: Color = Color::Rgb(0xff, 0x6a, 0xc1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TumixState {
@@ -37,6 +46,126 @@ pub enum TumixState {
     Completed,
     Failed,
     Stalled,
+}
+
+fn last_role_color(role: &str) -> Color {
+    match role {
+        "Assistant" => THEME_GREEN,
+        "User" => THEME_PINK,
+        _ => THEME_GRAY,
+    }
+}
+
+fn dialog_role_color(role: &str) -> Color {
+    match role {
+        "User" => THEME_ORANGE,
+        "Assistant" => THEME_GREEN,
+        _ => THEME_GRAY,
+    }
+}
+
+fn stylize_session_id(id: &str) -> String {
+    format!("{}", id.fg(THEME_ORANGE).bold())
+}
+
+fn session_id_span(id: &str) -> Span<'static> {
+    Span::styled(
+        id.to_string(),
+        Style::default()
+            .fg(THEME_ORANGE)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn session_age_span(age: &str) -> Span<'static> {
+    Span::styled(format!("({age})"), Style::default().fg(THEME_GRAY))
+}
+
+fn stylize_model_name(model: &str) -> String {
+    model.fg(THEME_BLUE).to_string()
+}
+
+fn stylize_last_role_text(role: &str) -> String {
+    role.fg(last_role_color(role)).to_string()
+}
+
+fn stylize_label(label: &str) -> String {
+    label.fg(THEME_GRAY).to_string()
+}
+
+fn stylize_messages_count(count: usize) -> String {
+    count.to_string().fg(THEME_YELLOW).to_string()
+}
+
+fn stylize_separator() -> String {
+    " • ".fg(THEME_GRAY).to_string()
+}
+
+fn stylize_cwd(cwd: &str) -> String {
+    if cwd.is_empty() {
+        return "-".fg(THEME_GRAY).to_string();
+    }
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    let display = if !home.is_empty() && cwd.starts_with(&home) {
+        cwd.replacen(&home, "~", 1)
+    } else {
+        cwd.to_string()
+    };
+
+    if let Some(rest) = display.strip_prefix("~/") {
+        format!(
+            "{}{}",
+            "~/".fg(THEME_PURPLE).to_string(),
+            rest.fg(THEME_CYAN).to_string()
+        )
+    } else if display == "~" {
+        "~".fg(THEME_PURPLE).to_string()
+    } else {
+        display.fg(THEME_CYAN).to_string()
+    }
+}
+
+fn colored_bar_span(color: Color) -> Span<'static> {
+    Span::styled("┃ ".to_string(), Style::default().fg(color))
+}
+
+fn tumix_state_color(state: TumixState) -> Color {
+    match state {
+        TumixState::Running => THEME_YELLOW,
+        TumixState::Completed => THEME_GREEN,
+        TumixState::Failed => THEME_PINK,
+        TumixState::Stalled => THEME_PURPLE,
+    }
+}
+
+fn tumix_badge_span() -> Span<'static> {
+    Span::styled(
+        "[Tumix]".to_string(),
+        Style::default()
+            .fg(THEME_PURPLE)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn neutral_indicator_span() -> Span<'static> {
+    Span::styled("○".to_string(), Style::default().fg(THEME_GRAY))
+}
+
+fn tumix_indicator_span(session: &SessionInfo, frame: usize) -> Span<'static> {
+    if let Some(indicator) = session.tumix.as_ref() {
+        let color = tumix_state_color(indicator.state);
+        let base_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+        match indicator.state {
+            TumixState::Running => {
+                let frames = ["◐", "◓", "◑", "◒"];
+                Span::styled(frames[frame % frames.len()].to_string(), base_style)
+            }
+            _ => Span::styled("●".to_string(), base_style),
+        }
+    } else {
+        neutral_indicator_span()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1606,21 +1735,28 @@ fn format_left_panel_sessions(
         let is_selected = selected_idx == Some(idx);
         let marker = if is_selected { "▶" } else { " " };
 
-        // Line 1: ID, age
-        let line1_text = format!(
-            " {} {}  ({})",
-            marker,
-            session.id.as_str().cyan(),
-            session.age.as_str().dim()
-        );
-        let mut line1 = ansi_escape_line(&line1_text);
+        // Line 1: marker, indicator, badge, ID, age
+        let mut line1_spans = Vec::new();
+        line1_spans.push(Span::from(" "));
+        line1_spans.push(Span::from(marker.to_string()));
+        line1_spans.push(Span::from(" "));
+        line1_spans.push(tumix_indicator_span(session, 0));
+        line1_spans.push(Span::from(" "));
+        if session.tumix.is_some() {
+            line1_spans.push(tumix_badge_span());
+            line1_spans.push(Span::from(" "));
+        }
+        line1_spans.push(session_id_span(session.id.as_str()));
+        line1_spans.push(Span::from("  "));
+        line1_spans.push(session_age_span(session.age.as_str()));
+        let mut line1 = Line::from(line1_spans);
         if is_selected {
             line1 = line1.reversed();
         }
         lines.push(line1);
 
         // Line 2: CWD or path
-        let line2_text = format!("   {}", session.cwd.as_str().dim());
+        let line2_text = format!("   {}", stylize_cwd(session.cwd.as_str()));
         let mut line2 = ansi_escape_line(&line2_text);
         if is_selected {
             line2 = line2.reversed();
@@ -1629,10 +1765,15 @@ fn format_left_panel_sessions(
 
         // Line 3: Messages + Model + Last role
         let line3_text = format!(
-            "   {} messages • {} • {}",
-            session.message_count.to_string().yellow(),
-            session.model.as_str().cyan(),
-            format!("Last: {}", session.last_role).green()
+            "   {messages_label}{messages_value}{sep1}{model_label}{model_value}{sep2}{last_label}{last_value}",
+            messages_label = stylize_label("Messages: "),
+            messages_value = stylize_messages_count(session.message_count),
+            sep1 = stylize_separator(),
+            model_label = stylize_label("Model: "),
+            model_value = stylize_model_name(session.model.as_str()),
+            sep2 = stylize_separator(),
+            last_label = stylize_label("Last: "),
+            last_value = stylize_last_role_text(session.last_role.as_str()),
         );
         let mut line3 = ansi_escape_line(&line3_text);
         if is_selected {
@@ -1647,24 +1788,6 @@ fn format_left_panel_sessions(
     lines
 }
 
-fn tumix_indicator_text(session: &SessionInfo, frame: usize) -> Option<String> {
-    let indicator = session.tumix.as_ref()?;
-    let symbol = match indicator.state {
-        TumixState::Completed => "●".green().bold().to_string(),
-        TumixState::Failed => "●".red().bold().to_string(),
-        TumixState::Stalled => "●".magenta().bold().to_string(),
-        TumixState::Running => {
-            let frames = ["◐", "◓", "◑", "◒"];
-            frames[frame % frames.len()].yellow().bold().to_string()
-        }
-    };
-    Some(symbol)
-}
-
-fn tumix_badge_text() -> String {
-    "[Tumix]".magenta().bold().to_string()
-}
-
 fn tumix_line_two_text(session: &SessionInfo) -> Option<String> {
     let indicator = session.tumix.as_ref()?;
     let mut parts: Vec<String> = Vec::new();
@@ -1676,8 +1799,8 @@ fn tumix_line_two_text(session: &SessionInfo) -> Option<String> {
     if let Some(branch) = &indicator.branch {
         parts.push(branch.as_str().cyan().to_string());
     }
-    parts.push(session.cwd.as_str().dim().to_string());
-    Some(format!("   {}", parts.join(" • ")))
+    parts.push(stylize_cwd(session.cwd.as_str()));
+    Some(format!("   {}", parts.join(&stylize_separator())))
 }
 
 fn tumix_line_three_suffix(session: &SessionInfo) -> String {
@@ -1700,7 +1823,11 @@ fn tumix_line_three_suffix(session: &SessionInfo) -> String {
     if parts.is_empty() {
         String::new()
     } else {
-        format!(" • {}", parts.join(" • "))
+        format!(
+            "{}{}",
+            stylize_separator(),
+            parts.join(&stylize_separator())
+        )
     }
 }
 
@@ -1765,29 +1892,28 @@ fn format_left_panel_sessions_paginated(
         let is_selected = state.selected_idx == abs_idx;
         let marker = if is_selected { "▶" } else { " " };
 
-        let mut line1_text = format!(" {}", marker);
-        if let Some(indicator) = tumix_indicator_text(session, state.animation_frame()) {
-            line1_text.push(' ');
-            line1_text.push_str(&indicator);
-        }
+        let mut line1_spans = Vec::new();
+        line1_spans.push(Span::from(" "));
+        line1_spans.push(Span::from(marker.to_string()));
+        line1_spans.push(Span::from(" "));
+        line1_spans.push(tumix_indicator_span(session, state.animation_frame()));
+        line1_spans.push(Span::from(" "));
         if session.tumix.is_some() {
-            line1_text.push(' ');
-            line1_text.push_str(&tumix_badge_text());
+            line1_spans.push(tumix_badge_span());
+            line1_spans.push(Span::from(" "));
         }
-        line1_text.push(' ');
-        line1_text.push_str(&session.id.as_str().cyan().to_string());
-        line1_text.push_str("  ");
-        let age = format!("({})", session.age);
-        line1_text.push_str(&age.as_str().dim().to_string());
+        line1_spans.push(session_id_span(session.id.as_str()));
+        line1_spans.push(Span::from("  "));
+        line1_spans.push(session_age_span(session.age.as_str()));
 
-        let mut line1 = ansi_escape_line(&line1_text);
+        let mut line1 = Line::from(line1_spans);
         if is_selected {
             line1 = line1.reversed();
         }
         lines.push(line1);
 
         let line2_text = tumix_line_two_text(session)
-            .unwrap_or_else(|| format!("   {}", session.cwd.as_str().dim()));
+            .unwrap_or_else(|| format!("   {}", stylize_cwd(session.cwd.as_str())));
         let mut line2 = ansi_escape_line(&line2_text);
         if is_selected {
             line2 = line2.reversed();
@@ -1795,10 +1921,15 @@ fn format_left_panel_sessions_paginated(
         lines.push(line2);
 
         let base_line3 = format!(
-            "   {} messages • {} • {}",
-            session.message_count.to_string().yellow(),
-            session.model.as_str().cyan(),
-            format!("Last: {}", session.last_role).green()
+            "   {messages_label}{messages_value}{sep1}{model_label}{model_value}{sep2}{last_label}{last_value}",
+            messages_label = stylize_label("Messages: "),
+            messages_value = stylize_messages_count(session.message_count),
+            sep1 = stylize_separator(),
+            model_label = stylize_label("Model: "),
+            model_value = stylize_model_name(session.model.as_str()),
+            sep2 = stylize_separator(),
+            last_label = stylize_label("Last: "),
+            last_value = stylize_last_role_text(session.last_role.as_str()),
         );
         let line3_text = format!("{base_line3}{}", tumix_line_three_suffix(session));
         let mut line3 = ansi_escape_line(&line3_text);
@@ -1820,14 +1951,17 @@ fn format_right_panel_preview(session: &SessionInfo, width: u16) -> Vec<Line<'st
 
     lines.push(ansi_escape_line(&format!(
         "▸ Session: {session_id} │ Path: {session_path}",
-        session_id = session.id.as_str().cyan(),
-        session_path = session.cwd.as_str().dim(),
+        session_id = stylize_session_id(session.id.as_str()),
+        session_path = stylize_cwd(session.cwd.as_str()),
     )));
     lines.push(ansi_escape_line(&format!(
-        "▸ Model: {model} │ Messages: {count} │ Last role: {last_role}",
-        model = session.model.as_str().yellow(),
-        count = session.message_count.to_string().yellow(),
-        last_role = session.last_role.as_str().green(),
+        "▸ {model_label}{model_value} │ {messages_label}{messages_value} │ {last_label}{last_value}",
+        model_label = stylize_label("Model: "),
+        model_value = stylize_model_name(session.model.as_str()),
+        messages_label = stylize_label("Messages: "),
+        messages_value = stylize_messages_count(session.message_count),
+        last_label = stylize_label("Last: "),
+        last_value = stylize_last_role_text(session.last_role.as_str()),
     )));
     lines.push(Line::from(""));
 
@@ -1846,35 +1980,38 @@ fn format_right_panel_preview(session: &SessionInfo, width: u16) -> Vec<Line<'st
 
     for (idx, (role, content, timestamp)) in messages.iter().enumerate() {
         let index = idx + 1;
-        let role_span = if role == "User" {
-            format!("{index}. {role_text}", role_text = role.as_str())
-                .red()
-                .into()
-        } else {
-            format!("{index}. {role_text}", role_text = role.as_str())
-                .green()
-                .into()
-        };
+        let role_color = dialog_role_color(role);
+        let role_text = format!("{index}. {role_text}", role_text = role.as_str());
         let header_spans = vec![
-            "┃ ".dim(),
-            role_span,
+            Span::styled("┃ ".to_string(), Style::default().fg(role_color)),
+            Span::styled(role_text, Style::default().fg(role_color)),
             " ".into(),
-            timestamp.clone().dim().into(),
+            Span::styled(timestamp.clone(), Style::default().fg(THEME_GRAY)),
         ];
         lines.push(Line::from(header_spans));
 
-        let sanitized = truncate_unicode(&content.replace('\r', ""), 200);
+        let sanitized = content.replace('\r', "");
 
-        let wrapped = crate::wrapping::word_wrap_lines(
+        let wrapped_raw = crate::wrapping::word_wrap_lines(
             &vec![Line::from(sanitized)],
             crate::wrapping::RtOptions::new(content_width)
                 .initial_indent("  ".into())
                 .subsequent_indent("  ".into()),
         );
+        let wrapped_colored: Vec<Line<'static>> = wrapped_raw
+            .into_iter()
+            .map(|line| line.fg(role_color))
+            .collect();
 
-        let prefixed = line_utils::prefix_lines(wrapped, "┃ ".dim().into(), "┃ ".dim().into());
+        let prefixed = line_utils::prefix_lines(
+            wrapped_colored,
+            colored_bar_span(role_color),
+            colored_bar_span(role_color),
+        );
         if prefixed.is_empty() {
-            lines.push(Line::from(vec!["┃ ".dim(), "  ".into()]));
+            lines.push(
+                Line::from(vec![colored_bar_span(role_color), Span::from("  ")]).fg(role_color),
+            );
         } else {
             lines.extend(prefixed);
         }
@@ -2145,7 +2282,7 @@ fn format_session_preview(session: &SessionInfo) -> Vec<Line<'static>> {
             };
             lines.push(role_line.into());
 
-            let sanitized = truncate_unicode(&content.replace('\r', ""), 200);
+            let sanitized = content.replace('\r', "");
             let wrapped = crate::wrapping::word_wrap_lines(
                 &vec![Line::from(sanitized)],
                 crate::wrapping::RtOptions::new(FULL_PREVIEW_WRAP_WIDTH)
@@ -2430,15 +2567,6 @@ fn slice_preview_lines(
     let max_offset = lines.len().saturating_sub(height);
     let start = offset.min(max_offset);
     lines.into_iter().skip(start).take(height).collect()
-}
-
-fn truncate_unicode(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-
-    let truncated: String = text.chars().take(max_chars).collect();
-    format!("{}...", truncated)
 }
 
 fn copy_to_clipboard(text: &str) -> Result<(), String> {
