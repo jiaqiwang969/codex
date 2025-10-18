@@ -34,6 +34,7 @@ use codex_multi_agent::DelegateSessionSummary;
 use codex_multi_agent::DetachedRunSummary;
 use codex_multi_agent::delegate_tool_adapter;
 use codex_protocol::ConversationId;
+use codex_tumix::Round1Result;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -455,6 +456,15 @@ impl App {
             }
             AppEvent::DelegateUpdate(update) => {
                 self.handle_delegate_update(update);
+            }
+            AppEvent::TumixRunRequested {
+                run_id,
+                session_id,
+                user_prompt,
+                display_prompt,
+            } => {
+                self.start_tumix_run(run_id, session_id, user_prompt, display_prompt)
+                    .await?;
             }
             AppEvent::InsertHistoryCell(cell) => {
                 let cell: Arc<dyn HistoryCell> = cell.into();
@@ -972,6 +982,67 @@ impl App {
         }
     }
 
+    async fn start_tumix_run(
+        &mut self,
+        run_id: String,
+        session_id: String,
+        user_prompt: Option<String>,
+        display_prompt: String,
+    ) -> Result<()> {
+        let agent_id = AgentId::parse("tumix").expect("static Tumix agent id is valid");
+        self.handle_delegate_update(DelegateEvent::Started {
+            run_id: run_id.clone(),
+            agent_id: agent_id.clone(),
+            prompt: display_prompt,
+            started_at: SystemTime::now(),
+            parent_run_id: None,
+            mode: DelegateSessionMode::Standard,
+        });
+
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let agent_id =
+                AgentId::parse("tumix").expect("static Tumix agent id is valid inside task");
+            let start_time = Instant::now();
+            let progress_tx = tx.clone();
+            let progress_run_id = run_id.clone();
+            let progress_agent_id = agent_id.clone();
+            let progress_cb: codex_tumix::ProgressCallback = Box::new(move |msg: String| {
+                let _ = progress_tx.send(AppEvent::DelegateUpdate(DelegateEvent::Delta {
+                    run_id: progress_run_id.clone(),
+                    agent_id: progress_agent_id.clone(),
+                    chunk: msg,
+                }));
+            });
+
+            let result = codex_tumix::run_tumix(session_id, user_prompt, Some(progress_cb)).await;
+
+            match result {
+                Ok(round_result) => {
+                    let duration = start_time.elapsed();
+                    let summary = format_tumix_summary(&round_result);
+                    let _ = tx.send(AppEvent::DelegateUpdate(DelegateEvent::Completed {
+                        run_id,
+                        agent_id,
+                        output: Some(summary),
+                        duration,
+                        mode: DelegateSessionMode::Standard,
+                    }));
+                }
+                Err(err) => {
+                    let _ = tx.send(AppEvent::DelegateUpdate(DelegateEvent::Failed {
+                        run_id,
+                        agent_id,
+                        error: format!("TUMIX失败：{err}"),
+                        mode: DelegateSessionMode::Standard,
+                    }));
+                }
+            }
+        });
+
+        Ok(())
+    }
+
     pub(crate) fn token_usage(&self) -> codex_core::protocol::TokenUsage {
         self.chat_widget.token_usage()
     }
@@ -1165,11 +1236,12 @@ impl CxresumeIdleLoader {
 
         let now = Instant::now();
         if let Some(deadline) = self.cooldown_until
-            && now < deadline {
-                let remaining = deadline.saturating_duration_since(now);
-                self.schedule_after(tx, remaining);
-                return false;
-            }
+            && now < deadline
+        {
+            let remaining = deadline.saturating_duration_since(now);
+            self.schedule_after(tx, remaining);
+            return false;
+        }
 
         let since_activity = now.saturating_duration_since(self.last_activity);
         if since_activity < self.idle_after {
@@ -1228,6 +1300,30 @@ impl Drop for CxresumeIdleLoader {
     fn drop(&mut self) {
         self.cancel_pending();
     }
+}
+
+fn format_tumix_summary(result: &Round1Result) -> String {
+    if result.agents.is_empty() {
+        return "⚠️ TUMIX Round 1 完成，但没有任何 agent 返回结果。".to_string();
+    }
+
+    let branch_lines = result
+        .agents
+        .iter()
+        .map(|agent| {
+            let commit_short = agent.commit_hash.chars().take(8).collect::<String>();
+            format!("  - {} (commit: {})", agent.branch, commit_short)
+        })
+        .collect::<Vec<_>>();
+
+    format!(
+        "✨ TUMIX Round 1 完成\n\
+         📊 共执行 {} 个 agent\n\
+         📁 详细日志与会话文件位于 `.tumix/`\n\
+         🌳 生成分支：\n{}",
+        result.agents.len(),
+        branch_lines.join("\n")
+    )
 }
 
 #[cfg(test)]

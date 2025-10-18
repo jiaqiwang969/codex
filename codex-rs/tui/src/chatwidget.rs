@@ -105,6 +105,7 @@ use crate::streaming::controller::StreamController;
 use std::fmt::Write;
 use std::path::Path;
 use std::time::SystemTime;
+use uuid::Uuid;
 
 use chrono::DateTime;
 use chrono::Local;
@@ -2395,80 +2396,20 @@ impl ChatWidget {
             }
         };
 
-        let prompt_text = user_prompt.as_deref().unwrap_or("");
+        let prompt_text = user_prompt.as_deref().unwrap_or("").trim();
+        let session_short = session_id.chars().take(8).collect::<String>();
+        let run_id = format!("tumix-{}", Uuid::new_v4());
+        let display_prompt = if prompt_text.is_empty() {
+            format!("会话：{}", session_short)
+        } else {
+            format!("会话：{} · 任务：{}", session_short, prompt_text)
+        };
 
-        // Add "starting TUMIX" message with user task
-        let start_msg = format!(
-            "🚀 Starting TUMIX Round 1...\n\n\
-             Task: {}\n\n\
-             Meta-agent will analyze task complexity and spawn specialized agents.\n\
-             Check `.tumix/round1_sessions.json` for real-time progress.\n\n\
-             📋 Session ID: {}\n\
-             🔧 Command will be saved to: `.tumix/meta_agent_command.sh`",
-            prompt_text,
-            &session_id[..16.min(session_id.len())]
-        );
-
-        self.add_to_history(history_cell::new_info_event(start_msg, None));
-        self.request_redraw();
-
-        // Spawn async task to run TUMIX
-        let tx = self.app_event_tx.clone();
-        tokio::spawn(async move {
-            // Create progress callback to send updates to GUI
-            let tx_progress = tx.clone();
-            let progress_cb = Some(Box::new(move |msg: String| {
-                tx_progress.send(AppEvent::InsertHistoryCell(Box::new(
-                    history_cell::new_info_event(msg, None),
-                )));
-            }) as codex_tumix::ProgressCallback);
-
-            match codex_tumix::run_tumix(session_id, user_prompt, progress_cb).await {
-                Ok(result) => {
-                    if result.agents.is_empty() {
-                        let msg = "⚠️ TUMIX Round 1 completed but generated 0 agents.\n\n\
-                                   This usually means meta-agent execution failed.\n\
-                                   Please check:\n\
-                                   • Codex binary is accessible at ~/.npm-global/bin/codex\n\
-                                   • Session ID is valid\n\
-                                   • Run with RUST_LOG=debug for detailed logs"
-                            .to_string();
-                        tx.send(AppEvent::InsertHistoryCell(Box::new(
-                            history_cell::new_error_event(msg),
-                        )));
-                    } else {
-                        let msg = format!(
-                            "✨ TUMIX Round 1 completed successfully!\n\n\
-                             📊 {} agents executed\n\
-                             📁 Results saved to: .tumix/round1_sessions.json\n\n\
-                             🌳 Branches created:\n{}",
-                            result.agents.len(),
-                            result
-                                .agents
-                                .iter()
-                                .map(|a| format!(
-                                    "  - {} (commit: {})",
-                                    a.branch,
-                                    &a.commit_hash[..8]
-                                ))
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        );
-                        tx.send(AppEvent::InsertHistoryCell(Box::new(
-                            history_cell::new_info_event(msg, None),
-                        )));
-                    }
-                }
-                Err(e) => {
-                    let msg = format!(
-                        "❌ TUMIX failed: {e}\n\n\
-                                       Run with RUST_LOG=debug to see detailed error output."
-                    );
-                    tx.send(AppEvent::InsertHistoryCell(Box::new(
-                        history_cell::new_error_event(msg),
-                    )));
-                }
-            }
+        self.app_event_tx.send(AppEvent::TumixRunRequested {
+            run_id,
+            session_id,
+            user_prompt,
+            display_prompt,
         });
     }
 

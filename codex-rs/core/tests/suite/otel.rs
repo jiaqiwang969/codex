@@ -23,7 +23,8 @@ use core_test_support::responses::ev_local_shell_call;
 macro_rules! retry_logs_assert {
     ($closure:expr) => {{
         use std::panic::AssertUnwindSafe;
-        use tokio::time::{sleep, Duration};
+        use tokio::time::Duration;
+        use tokio::time::sleep;
 
         const MAX_ATTEMPTS: usize = 100;
         let mut attempt = 0;

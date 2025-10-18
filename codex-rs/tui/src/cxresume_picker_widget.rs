@@ -114,11 +114,7 @@ fn stylize_cwd(cwd: &str) -> String {
     };
 
     if let Some(rest) = display.strip_prefix("~/") {
-        format!(
-            "{}{}",
-            "~/".fg(THEME_PURPLE),
-            rest.fg(THEME_CYAN)
-        )
+        format!("{}{}", "~/".fg(THEME_PURPLE), rest.fg(THEME_CYAN))
     } else if display == "~" {
         "~".fg(THEME_PURPLE).to_string()
     } else {
@@ -1032,9 +1028,10 @@ impl PickerState {
 
             PickerEvent::CopySessionId => {
                 if let Some(session) = self.selected_session()
-                    && let Err(err) = copy_to_clipboard(session.id.as_str()) {
-                        warn!("failed to copy session id: {err}");
-                    }
+                    && let Err(err) = copy_to_clipboard(session.id.as_str())
+                {
+                    warn!("failed to copy session id: {err}");
+                }
             }
 
             PickerEvent::NewSession => {
@@ -1120,25 +1117,26 @@ fn extract_session_meta(
     // First pass: extract session metadata from first line
     if let Some(Ok(first_line)) = lines.next()
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&first_line)
-            && let Some(payload) = json.get("payload") {
-                session_id = payload
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_else(|| path.file_name().unwrap().to_string_lossy().to_string());
+        && let Some(payload) = json.get("payload")
+    {
+        session_id = payload
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string)
+            .unwrap_or_else(|| path.file_name().unwrap().to_string_lossy().to_string());
 
-                cwd = payload
-                    .get("cwd")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_default();
+        cwd = payload
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
 
-                model = payload
-                    .get("model")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_else(|| "unknown".to_string());
-            }
+        model = payload
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string)
+            .unwrap_or_else(|| "unknown".to_string());
+    }
 
     // Second pass: gather message metadata
     let parsed = collect_session_messages(path);
@@ -1205,10 +1203,7 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
             if first_line {
                 first_line = false;
-                if json
-                    .get("type")
-                    .and_then(|v| v.as_str()) == Some("session_meta")
-                {
+                if json.get("type").and_then(|v| v.as_str()) == Some("session_meta") {
                     new_format = true;
                     if let Some(tokens) = extract_total_tokens(&json) {
                         data.total_tokens = Some(tokens);
@@ -1228,9 +1223,10 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
             };
 
             if let Some(message) = message
-                && !message.content.trim().is_empty() {
-                    data.messages.push(message);
-                }
+                && !message.content.trim().is_empty()
+            {
+                data.messages.push(message);
+            }
         }
     }
 
@@ -1238,10 +1234,7 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
 }
 
 fn parse_new_format_message(json: &serde_json::Value) -> Option<ParsedMessage> {
-    if json
-        .get("type")
-        .and_then(|v| v.as_str()) != Some("event_msg")
-    {
+    if json.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
         return None;
     }
 
@@ -1371,18 +1364,21 @@ fn extract_total_tokens(json: &serde_json::Value) -> Option<usize> {
     let payload = json.get("payload")?;
 
     if let Some(usage) = payload.get("usage")
-        && let Some(total) = usage.get("total_tokens").and_then(serde_json::Value::as_u64) {
-            return Some(total as usize);
-        }
+        && let Some(total) = usage
+            .get("total_tokens")
+            .and_then(serde_json::Value::as_u64)
+    {
+        return Some(total as usize);
+    }
 
     if let Some(info) = payload.get("info")
         && let Some(total) = info
             .get("total_token_usage")
             .and_then(|usage| usage.get("total_tokens"))
             .and_then(serde_json::Value::as_u64)
-        {
-            return Some(total as usize);
-        }
+    {
+        return Some(total as usize);
+    }
 
     None
 }
@@ -1471,30 +1467,31 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
                 if path.is_file() && path.extension().is_some_and(|ext| ext == "jsonl") {
                     if let Ok((id, session_cwd, msg_count, last_role, tokens, model)) =
                         extract_session_meta(&path)
-                        && should_include_session(&session_cwd, cwd) {
-                            let mtime = entry
-                                .metadata()
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                .map(|d| d.as_secs())
-                                .unwrap_or(0);
+                        && should_include_session(&session_cwd, cwd)
+                    {
+                        let mtime = entry
+                            .metadata()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
 
-                            let age = format_relative_time(mtime);
+                        let age = format_relative_time(mtime);
 
-                            sessions.push(SessionInfo {
-                                id,
-                                path: path.clone(),
-                                cwd: session_cwd,
-                                age,
-                                mtime,
-                                message_count: msg_count,
-                                last_role,
-                                total_tokens: tokens,
-                                model,
-                                tumix: None,
-                            });
-                        }
+                        sessions.push(SessionInfo {
+                            id,
+                            path: path.clone(),
+                            cwd: session_cwd,
+                            age,
+                            mtime,
+                            message_count: msg_count,
+                            last_role,
+                            total_tokens: tokens,
+                            model,
+                            tumix: None,
+                        });
+                    }
                 } else if path.is_dir() {
                     let _ = find_sessions(path.as_path(), cwd, sessions, max_depth - 1);
                 }
@@ -1626,13 +1623,13 @@ fn load_tumix_status_index() -> TumixStatusIndex {
 
             if state == TumixState::Running
                 && let Some(modified) = modified
-                    && now
-                        .duration_since(modified)
-                        .unwrap_or(Duration::from_secs(0))
-                        > Duration::from_secs(300)
-                    {
-                        state = TumixState::Stalled;
-                    }
+                && now
+                    .duration_since(modified)
+                    .unwrap_or(Duration::from_secs(0))
+                    > Duration::from_secs(300)
+            {
+                state = TumixState::Stalled;
+            }
 
             let agent_name = {
                 let name = record.agent_name.trim();
@@ -1797,10 +1794,11 @@ fn tumix_line_three_suffix(session: &SessionInfo) -> String {
     parts.push(run_label.as_str().dim().to_string());
 
     if matches!(indicator.state, TumixState::Failed | TumixState::Stalled)
-        && let Some(error) = indicator.error.as_ref() {
-            let truncated = truncate_error(error);
-            parts.push(truncated.as_str().red().to_string());
-        }
+        && let Some(error) = indicator.error.as_ref()
+    {
+        let truncated = truncate_error(error);
+        parts.push(truncated.as_str().red().to_string());
+    }
 
     if parts.is_empty() {
         String::new()
@@ -2497,10 +2495,7 @@ fn slice_left_panel_lines(lines: &[Line<'static>], height: usize) -> Vec<Line<'s
 }
 
 fn focus_line_index(lines: &[Line<'static>]) -> usize {
-    lines
-        .iter()
-        .position(line_has_reverse)
-        .unwrap_or(0)
+    lines.iter().position(line_has_reverse).unwrap_or(0)
 }
 
 fn line_has_reverse(line: &Line<'static>) -> bool {

@@ -51,10 +51,11 @@ impl App {
             kind: KeyEventKind::Press,
             ..
         }) = event
-            && matches!(c, 'x' | 'q') {
-                self.open_or_refresh_session_picker(tui);
-                return Ok(true);
-            }
+            && matches!(c, 'x' | 'q')
+        {
+            self.open_or_refresh_session_picker(tui);
+            return Ok(true);
+        }
 
         if self.backtrack.overlay_preview_active {
             match event {
@@ -172,8 +173,7 @@ impl App {
             if id == cxresume_picker_widget::NEW_SESSION_SENTINEL {
                 self.app_event_tx.send(AppEvent::NewSession);
             } else if let Some(info) = session {
-                self.app_event_tx
-                    .send(AppEvent::ResumeSession(info.path));
+                self.app_event_tx.send(AppEvent::ResumeSession(info.path));
             } else {
                 warn!("Selected session id {id} has no metadata");
             }

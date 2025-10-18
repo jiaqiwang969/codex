@@ -36,6 +36,14 @@ pub(crate) enum AppEvent {
     /// Update emitted from the orchestrator about delegate progress/completion.
     DelegateUpdate(DelegateEvent),
 
+    /// Request to launch a Tumix run using delegate-style UI wiring.
+    TumixRunRequested {
+        run_id: String,
+        session_id: String,
+        user_prompt: Option<String>,
+        display_prompt: String,
+    },
+
     /// Kick off an asynchronous file search for the given query (text after
     /// the `@`). Previous searches may be cancelled by the app layer so there
     /// is at most one in-flight search.
