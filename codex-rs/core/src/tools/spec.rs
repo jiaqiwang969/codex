@@ -1,5 +1,7 @@
 use crate::client_common::tools::ResponsesApiTool;
 use crate::client_common::tools::ToolSpec;
+use crate::features::Feature;
+use crate::features::Features;
 use crate::model_family::ModelFamily;
 use crate::tools::handlers::PLAN_TOOL;
 use crate::tools::handlers::apply_patch::ApplyPatchToolType;
@@ -24,6 +26,7 @@ pub enum ConfigShellToolType {
 pub(crate) struct ToolsConfig {
     pub shell_type: ConfigShellToolType,
     pub plan_tool: bool,
+    pub delegate_tool: bool,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
     pub web_search_request: bool,
     pub include_view_image_tool: bool,
@@ -33,26 +36,23 @@ pub(crate) struct ToolsConfig {
 
 pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) model_family: &'a ModelFamily,
-    pub(crate) include_plan_tool: bool,
-    pub(crate) include_apply_patch_tool: bool,
-    pub(crate) include_web_search_request: bool,
-    pub(crate) use_streamable_shell_tool: bool,
-    pub(crate) include_view_image_tool: bool,
-    pub(crate) experimental_unified_exec_tool: bool,
+    pub(crate) features: &'a Features,
+    pub(crate) include_delegate_tool: bool,
 }
 
 impl ToolsConfig {
     pub fn new(params: &ToolsConfigParams) -> Self {
-        let ToolsConfigParams {
-            model_family,
-            include_plan_tool,
-            include_apply_patch_tool,
-            include_web_search_request,
-            use_streamable_shell_tool,
-            include_view_image_tool,
-            experimental_unified_exec_tool,
-        } = params;
-        let shell_type = if *use_streamable_shell_tool {
+        let model_family = params.model_family;
+        let features = params.features;
+        let include_delegate_tool = params.include_delegate_tool;
+        let use_streamable_shell_tool = features.enabled(Feature::StreamableShell);
+        let experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
+        let include_plan_tool = features.enabled(Feature::PlanTool);
+        let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
+        let include_web_search_request = features.enabled(Feature::WebSearchRequest);
+        let include_view_image_tool = features.enabled(Feature::ViewImageTool);
+
+        let shell_type = if use_streamable_shell_tool {
             ConfigShellToolType::Streamable
         } else if model_family.uses_local_shell_tool {
             ConfigShellToolType::Local
@@ -64,7 +64,7 @@ impl ToolsConfig {
             Some(ApplyPatchToolType::Freeform) => Some(ApplyPatchToolType::Freeform),
             Some(ApplyPatchToolType::Function) => Some(ApplyPatchToolType::Function),
             None => {
-                if *include_apply_patch_tool {
+                if include_apply_patch_tool {
                     Some(ApplyPatchToolType::Freeform)
                 } else {
                     None
@@ -74,11 +74,12 @@ impl ToolsConfig {
 
         Self {
             shell_type,
-            plan_tool: *include_plan_tool,
+            plan_tool: include_plan_tool,
+            delegate_tool: include_delegate_tool,
             apply_patch_tool_type,
-            web_search_request: *include_web_search_request,
-            include_view_image_tool: *include_view_image_tool,
-            experimental_unified_exec_tool: *experimental_unified_exec_tool,
+            web_search_request: include_web_search_request,
+            include_view_image_tool,
+            experimental_unified_exec_tool,
             experimental_supported_tools: model_family.experimental_supported_tools.clone(),
         }
     }
@@ -320,6 +321,56 @@ fn create_test_sync_tool() -> ToolSpec {
     })
 }
 
+fn create_grep_files_tool() -> ToolSpec {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "pattern".to_string(),
+        JsonSchema::String {
+            description: Some("Regular expression pattern to search for.".to_string()),
+        },
+    );
+    properties.insert(
+        "include".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional glob that limits which files are searched (e.g. \"*.rs\" or \
+                 \"*.{ts,tsx}\")."
+                    .to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "path".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Directory or file path to search. Defaults to the session's working directory."
+                    .to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "limit".to_string(),
+        JsonSchema::Number {
+            description: Some(
+                "Maximum number of file paths to return (defaults to 100).".to_string(),
+            ),
+        },
+    );
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "grep_files".to_string(),
+        description: "Finds files whose contents match the pattern and lists them by modification \
+                      time."
+            .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["pattern".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_read_file_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
@@ -342,11 +393,72 @@ fn create_read_file_tool() -> ToolSpec {
             description: Some("The maximum number of lines to return.".to_string()),
         },
     );
+    properties.insert(
+        "mode".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional mode selector: \"slice\" for simple ranges (default) or \"indentation\" \
+                 to expand around an anchor line."
+                    .to_string(),
+            ),
+        },
+    );
+
+    let mut indentation_properties = BTreeMap::new();
+    indentation_properties.insert(
+        "anchor_line".to_string(),
+        JsonSchema::Number {
+            description: Some(
+                "Anchor line to center the indentation lookup on (defaults to offset).".to_string(),
+            ),
+        },
+    );
+    indentation_properties.insert(
+        "max_levels".to_string(),
+        JsonSchema::Number {
+            description: Some(
+                "How many parent indentation levels (smaller indents) to include.".to_string(),
+            ),
+        },
+    );
+    indentation_properties.insert(
+        "include_siblings".to_string(),
+        JsonSchema::Boolean {
+            description: Some(
+                "When true, include additional blocks that share the anchor indentation."
+                    .to_string(),
+            ),
+        },
+    );
+    indentation_properties.insert(
+        "include_header".to_string(),
+        JsonSchema::Boolean {
+            description: Some(
+                "Include doc comments or attributes directly above the selected block.".to_string(),
+            ),
+        },
+    );
+    indentation_properties.insert(
+        "max_lines".to_string(),
+        JsonSchema::Number {
+            description: Some(
+                "Hard cap on the number of lines returned when using indentation mode.".to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "indentation".to_string(),
+        JsonSchema::Object {
+            properties: indentation_properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+    );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "read_file".to_string(),
         description:
-            "Reads a local file with 1-indexed line numbers and returns up to the requested number of lines."
+            "Reads a local file with 1-indexed line numbers, supporting slice and indentation-aware block modes."
                 .to_string(),
         strict: false,
         parameters: JsonSchema::Object {
@@ -397,6 +509,107 @@ fn create_list_dir_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["dir_path".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_list_mcp_resources_tool() -> ToolSpec {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "server".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional MCP server name. When omitted, lists resources from every configured server."
+                    .to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "cursor".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Opaque cursor returned by a previous list_mcp_resources call for the same server."
+                    .to_string(),
+            ),
+        },
+    );
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "list_mcp_resources".to_string(),
+        description: "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_list_mcp_resource_templates_tool() -> ToolSpec {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "server".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional MCP server name. When omitted, lists resource templates from all configured servers."
+                    .to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "cursor".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Opaque cursor returned by a previous list_mcp_resource_templates call for the same server."
+                    .to_string(),
+            ),
+        },
+    );
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "list_mcp_resource_templates".to_string(),
+        description: "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_read_mcp_resource_tool() -> ToolSpec {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "server".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources."
+                    .to_string(),
+            ),
+        },
+    );
+    properties.insert(
+        "uri".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                    .to_string(),
+            ),
+        },
+    );
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "read_mcp_resource".to_string(),
+        description:
+            "Read a specific resource from an MCP server given the server name and resource URI."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["server".to_string(), "uri".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
@@ -609,9 +822,13 @@ pub(crate) fn build_specs(
     use crate::exec_command::create_exec_command_tool_for_responses_api;
     use crate::exec_command::create_write_stdin_tool_for_responses_api;
     use crate::tools::handlers::ApplyPatchHandler;
+    use crate::tools::handlers::DELEGATE_TOOL;
+    use crate::tools::handlers::DelegateToolHandler;
     use crate::tools::handlers::ExecStreamHandler;
+    use crate::tools::handlers::GrepFilesHandler;
     use crate::tools::handlers::ListDirHandler;
     use crate::tools::handlers::McpHandler;
+    use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::ReadFileHandler;
     use crate::tools::handlers::ShellHandler;
@@ -626,9 +843,11 @@ pub(crate) fn build_specs(
     let exec_stream_handler = Arc::new(ExecStreamHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
+    let delegate_handler = Arc::new(DelegateToolHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
     let view_image_handler = Arc::new(ViewImageHandler);
     let mcp_handler = Arc::new(McpHandler);
+    let mcp_resource_handler = Arc::new(McpResourceHandler);
 
     if config.experimental_unified_exec_tool {
         builder.push_spec(create_unified_exec_tool());
@@ -659,9 +878,21 @@ pub(crate) fn build_specs(
     builder.register_handler("container.exec", shell_handler.clone());
     builder.register_handler("local_shell", shell_handler);
 
+    builder.push_spec_with_parallel_support(create_list_mcp_resources_tool(), true);
+    builder.push_spec_with_parallel_support(create_list_mcp_resource_templates_tool(), true);
+    builder.push_spec_with_parallel_support(create_read_mcp_resource_tool(), true);
+    builder.register_handler("list_mcp_resources", mcp_resource_handler.clone());
+    builder.register_handler("list_mcp_resource_templates", mcp_resource_handler.clone());
+    builder.register_handler("read_mcp_resource", mcp_resource_handler);
+
     if config.plan_tool {
         builder.push_spec(PLAN_TOOL.clone());
         builder.register_handler("update_plan", plan_handler);
+    }
+
+    if config.delegate_tool {
+        builder.push_spec_with_parallel_support(DELEGATE_TOOL.clone(), true);
+        builder.register_handler("delegate_agent", delegate_handler);
     }
 
     if let Some(apply_patch_tool_type) = &config.apply_patch_tool_type {
@@ -678,8 +909,16 @@ pub(crate) fn build_specs(
 
     if config
         .experimental_supported_tools
-        .iter()
-        .any(|tool| tool == "read_file")
+        .contains(&"grep_files".to_string())
+    {
+        let grep_files_handler = Arc::new(GrepFilesHandler);
+        builder.push_spec_with_parallel_support(create_grep_files_tool(), true);
+        builder.register_handler("grep_files", grep_files_handler);
+    }
+
+    if config
+        .experimental_supported_tools
+        .contains(&"read_file".to_string())
     {
         let read_file_handler = Arc::new(ReadFileHandler);
         builder.push_spec_with_parallel_support(create_read_file_tool(), true);
@@ -698,8 +937,7 @@ pub(crate) fn build_specs(
 
     if config
         .experimental_supported_tools
-        .iter()
-        .any(|tool| tool == "test_sync_tool")
+        .contains(&"test_sync_tool".to_string())
     {
         let test_sync_handler = Arc::new(TestSyncHandler);
         builder.push_spec_with_parallel_support(create_test_sync_tool(), true);
@@ -787,40 +1025,56 @@ mod tests {
     fn test_build_specs() {
         let model_family = find_family_for_model("codex-mini-latest")
             .expect("codex-mini-latest should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::PlanTool);
+        features.enable(Feature::WebSearchRequest);
+        features.enable(Feature::UnifiedExec);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: true,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
         let (tools, _) = build_specs(&config, Some(HashMap::new())).build();
 
         assert_eq_tool_names(
             &tools,
-            &["unified_exec", "update_plan", "web_search", "view_image"],
+            &[
+                "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
+                "update_plan",
+                "web_search",
+                "view_image",
+            ],
         );
     }
 
     #[test]
     fn test_build_specs_default_shell() {
         let model_family = find_family_for_model("o3").expect("o3 should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::PlanTool);
+        features.enable(Feature::WebSearchRequest);
+        features.enable(Feature::UnifiedExec);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: true,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
         let (tools, _) = build_specs(&config, Some(HashMap::new())).build();
 
         assert_eq_tool_names(
             &tools,
-            &["unified_exec", "update_plan", "web_search", "view_image"],
+            &[
+                "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
+                "update_plan",
+                "web_search",
+                "view_image",
+            ],
         );
     }
 
@@ -829,34 +1083,33 @@ mod tests {
     fn test_parallel_support_flags() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("codex-mini-latest should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.disable(Feature::ViewImageTool);
+        features.enable(Feature::UnifiedExec);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: false,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: false,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: true,
         });
         let (tools, _) = build_specs(&config, None).build();
 
         assert!(!find_tool(&tools, "unified_exec").supports_parallel_tool_calls);
-        assert!(find_tool(&tools, "read_file").supports_parallel_tool_calls);
+        assert!(find_tool(&tools, "grep_files").supports_parallel_tool_calls);
         assert!(find_tool(&tools, "list_dir").supports_parallel_tool_calls);
+        assert!(find_tool(&tools, "read_file").supports_parallel_tool_calls);
+        assert!(find_tool(&tools, "delegate_agent").supports_parallel_tool_calls);
     }
 
     #[test]
     fn test_test_model_family_includes_sync_tool() {
         let model_family = find_family_for_model("test-gpt-5-codex")
             .expect("test-gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.disable(Feature::ViewImageTool);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: false,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: false,
-            experimental_unified_exec_tool: false,
+            features: &features,
+            include_delegate_tool: false,
         });
         let (tools, _) = build_specs(&config, None).build();
 
@@ -870,20 +1123,24 @@ mod tests {
                 .iter()
                 .any(|tool| tool_name(&tool.spec) == "read_file")
         );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool_name(&tool.spec) == "grep_files")
+        );
         assert!(tools.iter().any(|tool| tool_name(&tool.spec) == "list_dir"));
     }
 
     #[test]
     fn test_build_specs_mcp_tools() {
         let model_family = find_family_for_model("o3").expect("o3 should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
         let (tools, _) = build_specs(
             &config,
@@ -928,15 +1185,19 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "web_search",
                 "view_image",
                 "test_server/do_something_cool",
             ],
         );
 
+        let tool = find_tool(&tools, "test_server/do_something_cool");
         assert_eq!(
-            tools[3].spec,
-            ToolSpec::Function(ResponsesApiTool {
+            &tool.spec,
+            &ToolSpec::Function(ResponsesApiTool {
                 name: "test_server/do_something_cool".to_string(),
                 parameters: JsonSchema::Object {
                     properties: BTreeMap::from([
@@ -981,14 +1242,12 @@ mod tests {
     #[test]
     fn test_build_specs_mcp_tools_sorted_by_name() {
         let model_family = find_family_for_model("o3").expect("o3 should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: false,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
 
         // Intentionally construct a map with keys that would sort alphabetically.
@@ -1046,6 +1305,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "view_image",
                 "test_server/cool",
                 "test_server/do",
@@ -1058,14 +1320,13 @@ mod tests {
     fn test_mcp_tool_property_missing_type_defaults_to_string() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
 
         let (tools, _) = build_specs(
@@ -1096,6 +1357,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -1104,7 +1368,7 @@ mod tests {
         );
 
         assert_eq!(
-            tools[4].spec,
+            tools[7].spec,
             ToolSpec::Function(ResponsesApiTool {
                 name: "dash/search".to_string(),
                 parameters: JsonSchema::Object {
@@ -1127,14 +1391,13 @@ mod tests {
     fn test_mcp_tool_integer_normalized_to_number() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
 
         let (tools, _) = build_specs(
@@ -1163,6 +1426,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -1170,7 +1436,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            tools[4].spec,
+            tools[7].spec,
             ToolSpec::Function(ResponsesApiTool {
                 name: "dash/paginate".to_string(),
                 parameters: JsonSchema::Object {
@@ -1191,14 +1457,14 @@ mod tests {
     fn test_mcp_tool_array_without_items_gets_default_string_items() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
+        features.enable(Feature::ApplyPatchFreeform);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: true,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
 
         let (tools, _) = build_specs(
@@ -1227,6 +1493,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -1234,7 +1503,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            tools[4].spec,
+            tools[7].spec,
             ToolSpec::Function(ResponsesApiTool {
                 name: "dash/tags".to_string(),
                 parameters: JsonSchema::Object {
@@ -1258,14 +1527,13 @@ mod tests {
     fn test_mcp_tool_anyof_defaults_to_string() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
 
         let (tools, _) = build_specs(
@@ -1294,6 +1562,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -1301,7 +1572,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            tools[4].spec,
+            tools[7].spec,
             ToolSpec::Function(ResponsesApiTool {
                 name: "dash/value".to_string(),
                 parameters: JsonSchema::Object {
@@ -1337,14 +1608,13 @@ mod tests {
     fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         let model_family = find_family_for_model("gpt-5-codex")
             .expect("gpt-5-codex should be a valid model family");
+        let mut features = Features::with_defaults();
+        features.enable(Feature::UnifiedExec);
+        features.enable(Feature::WebSearchRequest);
         let config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &model_family,
-            include_plan_tool: false,
-            include_apply_patch_tool: false,
-            include_web_search_request: true,
-            use_streamable_shell_tool: false,
-            include_view_image_tool: true,
-            experimental_unified_exec_tool: true,
+            features: &features,
+            include_delegate_tool: false,
         });
         let (tools, _) = build_specs(
             &config,
@@ -1398,6 +1668,9 @@ mod tests {
             &tools,
             &[
                 "unified_exec",
+                "list_mcp_resources",
+                "list_mcp_resource_templates",
+                "read_mcp_resource",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -1406,7 +1679,7 @@ mod tests {
         );
 
         assert_eq!(
-            tools[4].spec,
+            tools[7].spec,
             ToolSpec::Function(ResponsesApiTool {
                 name: "test_server/do_something_cool".to_string(),
                 parameters: JsonSchema::Object {
@@ -1456,6 +1729,25 @@ mod tests {
                 description: "Do something cool".to_string(),
                 strict: false,
             })
+        );
+    }
+
+    #[test]
+    fn delegate_tool_enabled_by_flag() {
+        let model_family = find_family_for_model("gpt-5-codex")
+            .expect("gpt-5-codex should be a valid model family");
+        let features = Features::with_defaults();
+        let config = ToolsConfig::new(&ToolsConfigParams {
+            model_family: &model_family,
+            include_delegate_tool: true,
+            features: &features,
+        });
+        let (tools, _) = build_specs(&config, None).build();
+
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool_name(&tool.spec) == "delegate_agent")
         );
     }
 }

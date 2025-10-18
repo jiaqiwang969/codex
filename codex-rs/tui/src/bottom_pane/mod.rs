@@ -27,11 +27,13 @@ mod footer;
 mod list_selection_view;
 mod prompt_args;
 pub(crate) use list_selection_view::SelectionViewParams;
+mod feedback_view;
 mod paste_burst;
 pub mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
 mod textarea;
+pub(crate) use feedback_view::FeedbackView;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CancellationEvent {
@@ -69,6 +71,7 @@ pub(crate) struct BottomPane {
     /// Queued user messages to show under the status indicator.
     queued_user_messages: Vec<String>,
     context_window_percent: Option<u8>,
+    delegate_label: Option<String>,
 }
 
 pub(crate) struct BottomPaneParams {
@@ -102,6 +105,7 @@ impl BottomPane {
             queued_user_messages: Vec::new(),
             esc_backtrack_hint: false,
             context_window_percent: None,
+            delegate_label: None,
         }
     }
 
@@ -236,7 +240,7 @@ impl BottomPane {
             CancellationEvent::NotHandled
         } else {
             self.view_stack.pop();
-            self.set_composer_text(String::new());
+            self.clear_composer_for_ctrl_c();
             self.show_ctrl_c_quit_hint();
             CancellationEvent::Handled
         }
@@ -267,6 +271,11 @@ impl BottomPane {
     /// Replace the composer text with `text`.
     pub(crate) fn set_composer_text(&mut self, text: String) {
         self.composer.set_text_content(text);
+        self.request_redraw();
+    }
+
+    pub(crate) fn clear_composer_for_ctrl_c(&mut self) {
+        self.composer.clear_for_ctrl_c();
         self.request_redraw();
     }
 
@@ -358,6 +367,16 @@ impl BottomPane {
         self.context_window_percent = percent;
         self.composer.set_context_window_percent(percent);
         self.request_redraw();
+    }
+
+    pub(crate) fn set_delegate_label(&mut self, label: Option<String>) {
+        if self.delegate_label == label {
+            return;
+        }
+        self.delegate_label = label.clone();
+        if self.composer.set_delegate_label(label) {
+            self.request_redraw();
+        }
     }
 
     /// Show a generic list selection view with the provided items.

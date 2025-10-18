@@ -28,13 +28,22 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
     assert_eq!(servers.len(), 1);
     let docs = servers.get("docs").expect("server should exist");
     match &docs.transport {
-        McpServerTransportConfig::Stdio { command, args, env } => {
+        McpServerTransportConfig::Stdio {
+            command,
+            args,
+            env,
+            env_vars,
+            cwd,
+        } => {
             assert_eq!(command, "echo");
             assert_eq!(args, &vec!["hello".to_string()]);
             assert!(env.is_none());
+            assert!(env_vars.is_empty());
+            assert!(cwd.is_none());
         }
         other => panic!("unexpected transport: {other:?}"),
     }
+    assert!(docs.enabled);
 
     let mut remove_cmd = codex_command(codex_home.path())?;
     remove_cmd
@@ -90,6 +99,7 @@ async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
     assert_eq!(env.len(), 2);
     assert_eq!(env.get("FOO"), Some(&"bar".to_string()));
     assert_eq!(env.get("ALPHA"), Some(&"beta".to_string()));
+    assert!(envy.enabled);
 
     Ok(())
 }
@@ -110,12 +120,17 @@ async fn add_streamable_http_without_manual_token() -> Result<()> {
         McpServerTransportConfig::StreamableHttp {
             url,
             bearer_token_env_var,
+            http_headers,
+            env_http_headers,
         } => {
             assert_eq!(url, "https://example.com/mcp");
             assert!(bearer_token_env_var.is_none());
+            assert!(http_headers.is_none());
+            assert!(env_http_headers.is_none());
         }
         other => panic!("unexpected transport: {other:?}"),
     }
+    assert!(github.enabled);
 
     assert!(!codex_home.path().join(".credentials.json").exists());
     assert!(!codex_home.path().join(".env").exists());
@@ -147,12 +162,17 @@ async fn add_streamable_http_with_custom_env_var() -> Result<()> {
         McpServerTransportConfig::StreamableHttp {
             url,
             bearer_token_env_var,
+            http_headers,
+            env_http_headers,
         } => {
             assert_eq!(url, "https://example.com/issues");
             assert_eq!(bearer_token_env_var.as_deref(), Some("GITHUB_TOKEN"));
+            assert!(http_headers.is_none());
+            assert!(env_http_headers.is_none());
         }
         other => panic!("unexpected transport: {other:?}"),
     }
+    assert!(issues.enabled);
     Ok(())
 }
 

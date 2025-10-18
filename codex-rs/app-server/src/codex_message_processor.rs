@@ -1284,6 +1284,7 @@ async fn apply_bespoke_event_handling(
             command,
             cwd,
             reason,
+            parsed_cmd,
         }) => {
             let params = ExecCommandApprovalParams {
                 conversation_id,
@@ -1291,6 +1292,7 @@ async fn apply_bespoke_event_handling(
                 command,
                 cwd,
                 reason,
+                parsed_cmd,
             };
             let rx = outgoing
                 .send_request(ServerRequestPayload::ExecCommandApproval(params))
@@ -1334,6 +1336,7 @@ async fn derive_config_from_params(
         config: cli_overrides,
         base_instructions,
         include_plan_tool,
+        include_delegate_tool,
         include_apply_patch_tool,
     } = params;
     let overrides = ConfigOverrides {
@@ -1347,6 +1350,7 @@ async fn derive_config_from_params(
         codex_linux_sandbox_exe,
         base_instructions,
         include_plan_tool,
+        include_delegate_tool,
         include_apply_patch_tool,
         include_view_image_tool: None,
         show_raw_agent_reasoning: None,

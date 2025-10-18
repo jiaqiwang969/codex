@@ -20,6 +20,30 @@ use tracing_test::traced_test;
 
 use core_test_support::responses::ev_local_shell_call;
 
+macro_rules! retry_logs_assert {
+    ($closure:expr) => {{
+        use std::panic::AssertUnwindSafe;
+        use tokio::time::{sleep, Duration};
+
+        const MAX_ATTEMPTS: usize = 100;
+        let mut attempt = 0;
+        loop {
+            let result = std::panic::catch_unwind(AssertUnwindSafe(|| logs_assert($closure)));
+            match result {
+                Ok(()) => break,
+                Err(panic) => {
+                    attempt += 1;
+                    if attempt >= MAX_ATTEMPTS {
+                        std::panic::resume_unwind(panic);
+                    } else {
+                        sleep(Duration::from_millis(50)).await;
+                    }
+                }
+            }
+        }
+    }};
+}
+
 #[tokio::test]
 #[traced_test]
 async fn responses_api_emits_api_request_event() {
@@ -45,7 +69,7 @@ async fn responses_api_emits_api_request_event() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| line.contains("codex.api_request"))
@@ -53,7 +77,7 @@ async fn responses_api_emits_api_request_event() {
             .unwrap_or_else(|| Err("expected codex.api_request event".to_string()))
     });
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| line.contains("codex.conversation_starts"))
@@ -91,7 +115,7 @@ async fn process_sse_emits_tracing_for_output_item() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -135,7 +159,7 @@ async fn process_sse_emits_failed_event_on_parse_error() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -180,7 +204,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -237,7 +261,7 @@ async fn process_sse_failed_event_records_response_error_message() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -292,7 +316,7 @@ async fn process_sse_failed_event_logs_parse_error() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -342,7 +366,7 @@ async fn process_sse_failed_event_logs_missing_error() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -392,7 +416,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -447,7 +471,7 @@ async fn process_sse_emits_completed_telemetry() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| {
@@ -507,7 +531,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         let line = lines
             .iter()
             .find(|line| {
@@ -571,7 +595,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         let line = lines
             .iter()
             .find(|line| {
@@ -645,7 +669,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         let line = lines
             .iter()
             .find(|line| {
@@ -703,7 +727,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
     )
     .await;
 
-    logs_assert(|lines: &[&str]| {
+    retry_logs_assert!(|lines: &[&str]| {
         let line = lines
             .iter()
             .find(|line| line.contains("codex.tool_result") && line.contains("call_id=shell-call"))
@@ -801,7 +825,7 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "auto_config_call",
         "approved",
         "config",
@@ -866,7 +890,7 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "user_approved_call",
         "approved",
         "user",
@@ -932,7 +956,7 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "user_approved_session_call",
         "approvedforsession",
         "user",
@@ -998,7 +1022,7 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "sandbox_retry_call",
         "approved",
         "user",
@@ -1060,7 +1084,7 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "user_denied_call",
         "denied",
         "user",
@@ -1126,7 +1150,7 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "sandbox_session_call",
         "approvedforsession",
         "user",
@@ -1188,7 +1212,7 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
     )
     .await;
 
-    logs_assert(tool_decision_assertion(
+    retry_logs_assert!(tool_decision_assertion(
         "sandbox_deny_call",
         "denied",
         "user",

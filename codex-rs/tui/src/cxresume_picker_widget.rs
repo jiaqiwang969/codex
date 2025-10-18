@@ -116,8 +116,8 @@ fn stylize_cwd(cwd: &str) -> String {
     if let Some(rest) = display.strip_prefix("~/") {
         format!(
             "{}{}",
-            "~/".fg(THEME_PURPLE).to_string(),
-            rest.fg(THEME_CYAN).to_string()
+            "~/".fg(THEME_PURPLE),
+            rest.fg(THEME_CYAN)
         )
     } else if display == "~" {
         "~".fg(THEME_PURPLE).to_string()
@@ -520,7 +520,7 @@ impl Pagination {
 
     /// Get the total number of pages
     pub fn total_pages(&self) -> usize {
-        (self.total_items + self.items_per_page - 1) / self.items_per_page
+        self.total_items.div_ceil(self.items_per_page)
     }
 
     /// Get the start index for current page
@@ -1031,11 +1031,10 @@ impl PickerState {
             }
 
             PickerEvent::CopySessionId => {
-                if let Some(session) = self.selected_session() {
-                    if let Err(err) = copy_to_clipboard(session.id.as_str()) {
+                if let Some(session) = self.selected_session()
+                    && let Err(err) = copy_to_clipboard(session.id.as_str()) {
                         warn!("failed to copy session id: {err}");
                     }
-                }
             }
 
             PickerEvent::NewSession => {
@@ -1095,12 +1094,12 @@ impl PickerState {
 
 /// Get current working directory
 fn get_cwd() -> Result<PathBuf, String> {
-    std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))
+    std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}"))
 }
 
 /// Get sessions directory
 fn get_sessions_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|e| format!("Failed to get HOME: {}", e))?;
+    let home = std::env::var("HOME").map_err(|e| format!("Failed to get HOME: {e}"))?;
     Ok(PathBuf::from(home).join(".codex/sessions"))
 }
 
@@ -1119,29 +1118,27 @@ fn extract_session_meta(
     let mut total_tokens = 0;
 
     // First pass: extract session metadata from first line
-    if let Some(Ok(first_line)) = lines.next() {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&first_line) {
-            if let Some(payload) = json.get("payload") {
+    if let Some(Ok(first_line)) = lines.next()
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&first_line)
+            && let Some(payload) = json.get("payload") {
                 session_id = payload
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| path.file_name().unwrap().to_string_lossy().to_string());
 
                 cwd = payload
                     .get("cwd")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_default();
 
                 model = payload
                     .get("model")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "unknown".to_string());
             }
-        }
-    }
 
     // Second pass: gather message metadata
     let parsed = collect_session_messages(path);
@@ -1210,8 +1207,7 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
                 first_line = false;
                 if json
                     .get("type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "session_meta")
+                    .and_then(|v| v.as_str()) == Some("session_meta")
                 {
                     new_format = true;
                     if let Some(tokens) = extract_total_tokens(&json) {
@@ -1231,11 +1227,10 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
                 parse_legacy_format_message(&json)
             };
 
-            if let Some(message) = message {
-                if !message.content.trim().is_empty() {
+            if let Some(message) = message
+                && !message.content.trim().is_empty() {
                     data.messages.push(message);
                 }
-            }
         }
     }
 
@@ -1245,8 +1240,7 @@ fn collect_session_messages(path: &PathBuf) -> ParsedSessionData {
 fn parse_new_format_message(json: &serde_json::Value) -> Option<ParsedMessage> {
     if json
         .get("type")
-        .and_then(|v| v.as_str())
-        .map_or(true, |t| t != "event_msg")
+        .and_then(|v| v.as_str()) != Some("event_msg")
     {
         return None;
     }
@@ -1261,14 +1255,14 @@ fn parse_new_format_message(json: &serde_json::Value) -> Option<ParsedMessage> {
 
     let content = content_value
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .or_else(|| extract_text_from_content(payload.get("content")))?;
 
     let timestamp = json
         .get("timestamp")
         .and_then(|v| v.as_str())
         .or_else(|| payload.get("timestamp").and_then(|v| v.as_str()))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     Some(ParsedMessage {
         role: role.to_string(),
@@ -1296,12 +1290,12 @@ fn parse_legacy_format_message(json: &serde_json::Value) -> Option<ParsedMessage
         .or_else(|| {
             payload
                 .and_then(|p| p.get("text").and_then(|v| v.as_str()))
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
         .or_else(|| {
             json.get("text")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })?;
 
     if content.trim().is_empty() {
@@ -1312,7 +1306,7 @@ fn parse_legacy_format_message(json: &serde_json::Value) -> Option<ParsedMessage
         .get("timestamp")
         .and_then(|v| v.as_str())
         .or_else(|| payload.and_then(|p| p.get("timestamp").and_then(|v| v.as_str())))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     Some(ParsedMessage {
         role,
@@ -1376,21 +1370,19 @@ fn collect_text_segments(value: &serde_json::Value, out: &mut Vec<String>) {
 fn extract_total_tokens(json: &serde_json::Value) -> Option<usize> {
     let payload = json.get("payload")?;
 
-    if let Some(usage) = payload.get("usage") {
-        if let Some(total) = usage.get("total_tokens").and_then(|t| t.as_u64()) {
+    if let Some(usage) = payload.get("usage")
+        && let Some(total) = usage.get("total_tokens").and_then(serde_json::Value::as_u64) {
             return Some(total as usize);
         }
-    }
 
-    if let Some(info) = payload.get("info") {
-        if let Some(total) = info
+    if let Some(info) = payload.get("info")
+        && let Some(total) = info
             .get("total_token_usage")
             .and_then(|usage| usage.get("total_tokens"))
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
         {
             return Some(total as usize);
         }
-    }
 
     None
 }
@@ -1440,7 +1432,7 @@ fn format_relative_time(mtime: u64) -> String {
     let diff = now.saturating_sub(mtime);
 
     if diff < 60 {
-        format!("{}s ago", diff)
+        format!("{diff}s ago")
     } else if diff < 3600 {
         format!("{}m ago", diff / 60)
     } else if diff < 86400 {
@@ -1474,41 +1466,37 @@ pub fn get_cwd_sessions() -> Result<Vec<SessionInfo>, String> {
         }
 
         if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "jsonl") {
-                        if let Ok((id, session_cwd, msg_count, last_role, tokens, model)) =
-                            extract_session_meta(&path)
-                        {
-                            if should_include_session(&session_cwd, cwd) {
-                                let mtime = entry
-                                    .metadata()
-                                    .ok()
-                                    .and_then(|m| m.modified().ok())
-                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                    .map(|d| d.as_secs())
-                                    .unwrap_or(0);
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "jsonl") {
+                    if let Ok((id, session_cwd, msg_count, last_role, tokens, model)) =
+                        extract_session_meta(&path)
+                        && should_include_session(&session_cwd, cwd) {
+                            let mtime = entry
+                                .metadata()
+                                .ok()
+                                .and_then(|m| m.modified().ok())
+                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0);
 
-                                let age = format_relative_time(mtime);
+                            let age = format_relative_time(mtime);
 
-                                sessions.push(SessionInfo {
-                                    id,
-                                    path: path.clone(),
-                                    cwd: session_cwd,
-                                    age,
-                                    mtime,
-                                    message_count: msg_count,
-                                    last_role,
-                                    total_tokens: tokens,
-                                    model,
-                                    tumix: None,
-                                });
-                            }
+                            sessions.push(SessionInfo {
+                                id,
+                                path: path.clone(),
+                                cwd: session_cwd,
+                                age,
+                                mtime,
+                                message_count: msg_count,
+                                last_role,
+                                total_tokens: tokens,
+                                model,
+                                tumix: None,
+                            });
                         }
-                    } else if path.is_dir() {
-                        let _ = find_sessions(path.as_path(), cwd, sessions, max_depth - 1);
-                    }
+                } else if path.is_dir() {
+                    let _ = find_sessions(path.as_path(), cwd, sessions, max_depth - 1);
                 }
             }
         }
@@ -1608,13 +1596,10 @@ fn load_tumix_status_index() -> TumixStatusIndex {
             .and_then(OsStr::to_str)
             .and_then(|name| name.strip_prefix("round1_sessions_"))
             .and_then(|rest| rest.strip_suffix(".json"))
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_else(|| "unknown".to_string());
 
-        let metadata = match entry.metadata() {
-            Ok(meta) => Some(meta),
-            Err(_) => None,
-        };
+        let metadata = entry.metadata().ok();
         let modified = metadata.and_then(|meta| meta.modified().ok());
 
         let content = match fs::read_to_string(&path) {
@@ -1639,17 +1624,15 @@ fn load_tumix_status_index() -> TumixStatusIndex {
                 TumixStatusRaw::Failed => TumixState::Failed,
             };
 
-            if state == TumixState::Running {
-                if let Some(modified) = modified {
-                    if now
+            if state == TumixState::Running
+                && let Some(modified) = modified
+                    && now
                         .duration_since(modified)
                         .unwrap_or(Duration::from_secs(0))
                         > Duration::from_secs(300)
                     {
                         state = TumixState::Stalled;
                     }
-                }
-            }
 
             let agent_name = {
                 let name = record.agent_name.trim();
@@ -1674,13 +1657,13 @@ fn load_tumix_status_index() -> TumixStatusIndex {
                 .as_ref()
                 .map(|e| e.trim())
                 .filter(|e| !e.is_empty())
-                .map(|e| e.to_string());
+                .map(std::string::ToString::to_string);
 
-            let path_opt = record.jsonl_path.as_ref().and_then(|p| {
+            let path_opt = record.jsonl_path.as_ref().map(|p| {
                 let raw = PathBuf::from(p);
                 match raw.canonicalize() {
-                    Ok(real) => Some(real),
-                    Err(_) => Some(raw),
+                    Ok(real) => real,
+                    Err(_) => raw,
                 }
             });
 
@@ -1717,7 +1700,7 @@ fn format_left_panel_sessions(
     // Header with pagination info
     let total_sessions = sessions.len();
     let items_per_page = 30;
-    let total_pages = (total_sessions + items_per_page - 1) / items_per_page;
+    let total_pages = total_sessions.div_ceil(items_per_page);
     let current_page = 1; // Default to page 1 for this renderer
 
     let header = format!(
@@ -1813,12 +1796,11 @@ fn tumix_line_three_suffix(session: &SessionInfo) -> String {
     let run_label = format!("run {}", short_run_id(&indicator.run_id));
     parts.push(run_label.as_str().dim().to_string());
 
-    if matches!(indicator.state, TumixState::Failed | TumixState::Stalled) {
-        if let Some(error) = indicator.error.as_ref() {
+    if matches!(indicator.state, TumixState::Failed | TumixState::Stalled)
+        && let Some(error) = indicator.error.as_ref() {
             let truncated = truncate_error(error);
             parts.push(truncated.as_str().red().to_string());
         }
-    }
 
     if parts.is_empty() {
         String::new()
@@ -2220,7 +2202,7 @@ fn format_message_blocks(session: &SessionInfo, width: u16) -> Vec<Line<'static>
                 role.as_str().green()
             };
 
-            let header_text = format!("┃ {}", role_color);
+            let header_text = format!("┃ {role_color}");
             lines.push(ansi_escape_line(&header_text));
 
             // Message body with wrapping and bar prefix
@@ -2232,11 +2214,11 @@ fn format_message_blocks(session: &SessionInfo, width: u16) -> Vec<Line<'static>
                     while !remaining.is_empty() {
                         let chunk_size = usable_width.min(remaining.len());
                         let chunk = &remaining[..chunk_size];
-                        lines.push(ansi_escape_line(&format!("  {}", chunk)));
+                        lines.push(ansi_escape_line(&format!("  {chunk}")));
                         remaining = &remaining[chunk_size..];
                     }
                 } else {
-                    lines.push(ansi_escape_line(&format!("  {}", content_line)));
+                    lines.push(ansi_escape_line(&format!("  {content_line}")));
                 }
             }
 
@@ -2517,7 +2499,7 @@ fn slice_left_panel_lines(lines: &[Line<'static>], height: usize) -> Vec<Line<'s
 fn focus_line_index(lines: &[Line<'static>]) -> usize {
     lines
         .iter()
-        .position(|line| line_has_reverse(line))
+        .position(line_has_reverse)
         .unwrap_or(0)
 }
 

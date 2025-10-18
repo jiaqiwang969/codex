@@ -23,10 +23,12 @@ pub enum SlashCommand {
     Undo,
     Diff,
     Mention,
+    Agent,
     Status,
     Mcp,
     Logout,
     Quit,
+    Feedback,
     #[cfg(debug_assertions)]
     TestApproval,
 }
@@ -35,6 +37,7 @@ impl SlashCommand {
     /// User-visible description shown in the popup.
     pub fn description(self) -> &'static str {
         match self {
+            SlashCommand::Feedback => "send logs to maintainers",
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
             SlashCommand::Tumix => "run TUMIX multi-agent parallel execution (Round 1)",
@@ -45,6 +48,7 @@ impl SlashCommand {
             SlashCommand::Quit => "exit Codex",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
+            SlashCommand::Agent => "switch into a delegated agent session",
             SlashCommand::Status => "show current session configuration and token usage",
             SlashCommand::Model => "choose what model and reasoning effort to use",
             SlashCommand::Approvals => "choose what Codex can do without approval",
@@ -75,9 +79,11 @@ impl SlashCommand {
             | SlashCommand::Logout => false,
             SlashCommand::Diff
             | SlashCommand::Mention
+            | SlashCommand::Agent
             | SlashCommand::Status
             | SlashCommand::Mcp
             | SlashCommand::TumixStop
+            | SlashCommand::Feedback
             | SlashCommand::Quit => true,
 
             #[cfg(debug_assertions)]
@@ -91,13 +97,7 @@ pub fn built_in_slash_commands() -> Vec<(&'static str, SlashCommand)> {
     let show_beta_features = beta_features_enabled();
 
     SlashCommand::iter()
-        .filter(|cmd| {
-            if *cmd == SlashCommand::Undo {
-                show_beta_features
-            } else {
-                true
-            }
-        })
+        .filter(|cmd| *cmd != SlashCommand::Undo || show_beta_features)
         .map(|c| (c.command(), c))
         .collect()
 }

@@ -8,7 +8,7 @@ use tokio::process::Command;
 
 fn load_meta_prompt_template() -> Result<String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let default_path = PathBuf::from(home).join(".codex/prompts/tumix-meta.md");
+    let default_path = PathBuf::from(home).join(".codex/tumix/tumix-meta.md");
     let prompt_path = std::env::var("TUMIX_META_PROMPT_PATH")
         .map(PathBuf::from)
         .unwrap_or(default_path);

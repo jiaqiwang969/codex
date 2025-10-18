@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 fn load_agent_prompt_template() -> Result<String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let default_path = PathBuf::from(home).join(".codex/prompts/tumix-agent.md");
+    let default_path = PathBuf::from(home).join(".codex/tumix/tumix-agent.md");
     let prompt_path = std::env::var("TUMIX_AGENT_PROMPT_PATH")
         .map(PathBuf::from)
         .unwrap_or(default_path);

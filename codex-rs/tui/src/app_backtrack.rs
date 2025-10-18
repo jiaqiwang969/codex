@@ -51,12 +51,10 @@ impl App {
             kind: KeyEventKind::Press,
             ..
         }) = event
-        {
-            if matches!(c, 'x' | 'q') {
+            && matches!(c, 'x' | 'q') {
                 self.open_or_refresh_session_picker(tui);
                 return Ok(true);
             }
-        }
 
         if self.backtrack.overlay_preview_active {
             match event {
@@ -100,15 +98,16 @@ impl App {
 
     /// Handle global Esc presses for backtracking when no overlay is present.
     pub(crate) fn handle_backtrack_esc_key(&mut self, tui: &mut tui::Tui) {
-        // Only handle backtracking when composer is empty to avoid clobbering edits.
-        if self.chat_widget.composer_is_empty() {
-            if !self.backtrack.primed {
-                self.prime_backtrack();
-            } else if self.overlay.is_none() {
-                self.open_backtrack_preview(tui);
-            } else if self.backtrack.overlay_preview_active {
-                self.step_backtrack_and_highlight(tui);
-            }
+        if !self.chat_widget.composer_is_empty() {
+            return;
+        }
+
+        if !self.backtrack.primed {
+            self.prime_backtrack();
+        } else if self.overlay.is_none() {
+            self.open_backtrack_preview(tui);
+        } else if self.backtrack.overlay_preview_active {
+            self.step_backtrack_and_highlight(tui);
         }
     }
 
@@ -158,7 +157,7 @@ impl App {
         if let Some(state) = self
             .overlay
             .as_ref()
-            .and_then(|overlay| overlay.session_picker_state())
+            .and_then(super::pager_overlay::Overlay::session_picker_state)
         {
             self.update_cxresume_cache(state);
         }
@@ -174,7 +173,7 @@ impl App {
                 self.app_event_tx.send(AppEvent::NewSession);
             } else if let Some(info) = session {
                 self.app_event_tx
-                    .send(AppEvent::ResumeSession(info.path.clone()));
+                    .send(AppEvent::ResumeSession(info.path));
             } else {
                 warn!("Selected session id {id} has no metadata");
             }
@@ -415,6 +414,7 @@ impl App {
             initial_images: Vec::new(),
             enhanced_keys_supported: self.enhanced_keys_supported,
             auth_manager: self.auth_manager.clone(),
+            feedback: self.feedback.clone(),
         };
         self.chat_widget =
             crate::chatwidget::ChatWidget::new_from_existing(init, conv, session_configured);

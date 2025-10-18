@@ -9,6 +9,7 @@ use codex_protocol::config_types::ReasoningEffort;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::Verbosity;
+use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::FileChange;
@@ -231,6 +232,10 @@ pub struct NewConversationParams {
     /// Whether to include the plan tool in the conversation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_plan_tool: Option<bool>,
+
+    /// Whether to include the delegate tool that invokes sub-agents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_delegate_tool: Option<bool>,
 
     /// Whether to include the apply patch tool in the conversation.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -697,6 +702,7 @@ pub struct ExecCommandApprovalParams {
     pub cwd: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    pub parsed_cmd: Vec<ParsedCommand>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
@@ -842,6 +848,7 @@ mod tests {
                 config: None,
                 base_instructions: None,
                 include_plan_tool: None,
+                include_delegate_tool: None,
                 include_apply_patch_tool: None,
             },
         };
@@ -904,6 +911,9 @@ mod tests {
             command: vec!["echo".to_string(), "hello".to_string()],
             cwd: PathBuf::from("/tmp"),
             reason: Some("because tests".to_string()),
+            parsed_cmd: vec![ParsedCommand::Unknown {
+                cmd: "echo hello".to_string(),
+            }],
         };
         let request = ServerRequest::ExecCommandApproval {
             request_id: RequestId::Integer(7),
@@ -920,6 +930,12 @@ mod tests {
                     "command": ["echo", "hello"],
                     "cwd": "/tmp",
                     "reason": "because tests",
+                    "parsedCmd": [
+                        {
+                            "type": "unknown",
+                            "cmd": "echo hello"
+                        }
+                    ]
                 }
             }),
             serde_json::to_value(&request)?,

@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicU64;
 
 use crate::AuthManager;
 use crate::client_common::REVIEW_PROMPT;
+use crate::delegate_tool::DelegateToolAdapter;
 use crate::event_mapping::map_response_item_to_event_messages;
 use crate::function_tool::FunctionCallError;
 use crate::review_format::format_review_findings_block;
@@ -17,6 +18,7 @@ use codex_apply_patch::ApplyPatchAction;
 use codex_protocol::ConversationId;
 use codex_protocol::protocol::ConversationPathResponseEvent;
 use codex_protocol::protocol::ExitedReviewModeEvent;
+use codex_protocol::protocol::McpAuthStatus;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
@@ -27,10 +29,17 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
 use mcp_types::CallToolResult;
+use mcp_types::ListResourceTemplatesRequestParams;
+use mcp_types::ListResourceTemplatesResult;
+use mcp_types::ListResourcesRequestParams;
+use mcp_types::ListResourcesResult;
+use mcp_types::ReadResourceRequestParams;
+use mcp_types::ReadResourceResult;
 use serde_json;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -57,6 +66,7 @@ use crate::exec_command::WriteStdinParams;
 use crate::executor::Executor;
 use crate::executor::ExecutorConfig;
 use crate::executor::normalize_exec_result;
+use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp_connection_manager::McpConnectionManager;
 use crate::model_family::find_family_for_model;
 use crate::openai_model_info::get_model_info;
@@ -98,6 +108,7 @@ use crate::rollout::RolloutRecorderParams;
 use crate::shell;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
+use crate::state::TaskKind;
 use crate::tasks::CompactTask;
 use crate::tasks::RegularTask;
 use crate::tasks::ReviewTask;
@@ -110,6 +121,7 @@ use crate::unified_exec::UnifiedExecSessionManager;
 use crate::user_instructions::UserInstructions;
 use crate::user_notification::UserNotification;
 use crate::util::backoff;
+use codex_async_utils::OrCancelExt;
 use codex_otel::otel_event_manager::OtelEventManager;
 use codex_protocol::config_types::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -148,6 +160,7 @@ impl Codex {
     pub async fn spawn(
         config: Config,
         auth_manager: Arc<AuthManager>,
+        delegate_adapter: Option<Arc<dyn DelegateToolAdapter>>,
         conversation_history: InitialHistory,
         session_source: SessionSource,
     ) -> CodexResult<CodexSpawnOk> {
@@ -176,6 +189,7 @@ impl Codex {
             configure_session,
             config.clone(),
             auth_manager.clone(),
+            delegate_adapter,
             tx_event.clone(),
             conversation_history,
             session_source,
@@ -311,6 +325,7 @@ impl Session {
         configure_session: ConfigureSession,
         config: Arc<Config>,
         auth_manager: Arc<AuthManager>,
+        delegate_adapter: Option<Arc<dyn DelegateToolAdapter>>,
         tx_event: Sender<Event>,
         initial_history: InitialHistory,
         session_source: SessionSource,
@@ -363,15 +378,32 @@ impl Session {
 
         let mcp_fut = McpConnectionManager::new(
             config.mcp_servers.clone(),
-            config.use_experimental_use_rmcp_client,
+            config
+                .features
+                .enabled(crate::features::Feature::RmcpClient),
             config.mcp_oauth_credentials_store_mode,
         );
         let default_shell_fut = shell::default_user_shell();
         let history_meta_fut = crate::message_history::history_metadata(&config);
+        let auth_statuses_fut = compute_auth_statuses(
+            config.mcp_servers.iter(),
+            config.mcp_oauth_credentials_store_mode,
+        );
 
         // Join all independent futures.
-        let (rollout_recorder, mcp_res, default_shell, (history_log_id, history_entry_count)) =
-            tokio::join!(rollout_fut, mcp_fut, default_shell_fut, history_meta_fut);
+        let (
+            rollout_recorder,
+            mcp_res,
+            default_shell,
+            (history_log_id, history_entry_count),
+            auth_statuses,
+        ) = tokio::join!(
+            rollout_fut,
+            mcp_fut,
+            default_shell_fut,
+            history_meta_fut,
+            auth_statuses_fut
+        );
 
         let rollout_recorder = rollout_recorder.map_err(|e| {
             error!("failed to initialize rollout recorder: {e:#}");
@@ -398,11 +430,24 @@ impl Session {
         // Surface individual client start-up failures to the user.
         if !failed_clients.is_empty() {
             for (server_name, err) in failed_clients {
-                let message = format!("MCP client for `{server_name}` failed to start: {err:#}");
-                error!("{message}");
+                let log_message =
+                    format!("MCP client for `{server_name}` failed to start: {err:#}");
+                error!("{log_message}");
+                let display_message = if matches!(
+                    auth_statuses.get(&server_name),
+                    Some(McpAuthStatus::NotLoggedIn)
+                ) {
+                    format!(
+                        "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}` to log in."
+                    )
+                } else {
+                    log_message
+                };
                 post_session_configured_error_events.push(Event {
                     id: INITIAL_SUBMIT_ID.to_owned(),
-                    msg: EventMsg::Error(ErrorEvent { message }),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: display_message,
+                    }),
                 });
             }
         }
@@ -412,6 +457,7 @@ impl Session {
             config.model.as_str(),
             config.model_family.slug.as_str(),
             auth_manager.auth().and_then(|a| a.get_account_id()),
+            auth_manager.auth().and_then(|a| a.get_account_email()),
             auth_manager.auth().map(|a| a.mode),
             config.otel.log_user_prompt,
             terminal::user_agent(),
@@ -441,16 +487,14 @@ impl Session {
             model_reasoning_summary,
             conversation_id,
         );
+        let delegate_enabled = config.include_delegate_tool && delegate_adapter.is_some();
+
         let turn_context = TurnContext {
             client,
             tools_config: ToolsConfig::new(&ToolsConfigParams {
                 model_family: &config.model_family,
-                include_plan_tool: config.include_plan_tool,
-                include_apply_patch_tool: config.include_apply_patch_tool,
-                include_web_search_request: config.tools_web_search_request,
-                use_streamable_shell_tool: config.use_experimental_streamable_shell_tool,
-                include_view_image_tool: config.include_view_image_tool,
-                experimental_unified_exec_tool: config.use_experimental_unified_exec_tool,
+                features: &config.features,
+                include_delegate_tool: delegate_enabled,
             }),
             user_instructions,
             base_instructions,
@@ -474,6 +518,7 @@ impl Session {
                 turn_context.cwd.clone(),
                 config.codex_linux_sandbox_exe.clone(),
             )),
+            delegate_adapter,
         };
 
         let sess = Arc::new(Session {
@@ -513,6 +558,14 @@ impl Session {
 
     pub(crate) fn get_tx_event(&self) -> Sender<Event> {
         self.tx_event.clone()
+    }
+
+    pub(crate) fn conversation_id(&self) -> ConversationId {
+        self.conversation_id
+    }
+
+    pub(crate) fn delegate_adapter(&self) -> Option<Arc<dyn DelegateToolAdapter>> {
+        self.services.delegate_adapter.as_ref().map(Arc::clone)
     }
 
     fn next_internal_sub_id(&self) -> String {
@@ -592,6 +645,7 @@ impl Session {
             warn!("Overwriting existing pending approval for sub_id: {event_id}");
         }
 
+        let parsed_cmd = parse_command(&command);
         let event = Event {
             id: event_id,
             msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
@@ -599,6 +653,7 @@ impl Session {
                 command,
                 cwd,
                 reason,
+                parsed_cmd,
             }),
         };
         self.send_event(event).await;
@@ -871,10 +926,7 @@ impl Session {
                 call_id,
                 command: command_for_display.clone(),
                 cwd,
-                parsed_cmd: parse_command(&command_for_display)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                parsed_cmd: parse_command(&command_for_display),
             }),
         };
         let event = Event {
@@ -899,6 +951,7 @@ impl Session {
             duration,
             exit_code,
             timed_out: _,
+            ..
         } = output;
         // Send full stdout/stderr to clients; do not truncate.
         let stdout = stdout.text.clone();
@@ -963,14 +1016,27 @@ impl Session {
         let sub_id = context.sub_id.clone();
         let call_id = context.call_id.clone();
 
-        self.on_exec_command_begin(turn_diff_tracker.clone(), context.clone())
-            .await;
-
+        let begin_turn_diff = turn_diff_tracker.clone();
+        let begin_context = context.clone();
+        let session = self;
         let result = self
             .services
             .executor
-            .run(request, self, approval_policy, &context)
+            .run(request, self, approval_policy, &context, move || {
+                let turn_diff = begin_turn_diff.clone();
+                let ctx = begin_context.clone();
+                async move {
+                    session.on_exec_command_begin(turn_diff, ctx).await;
+                }
+            })
             .await;
+
+        if matches!(
+            &result,
+            Err(ExecError::Function(FunctionCallError::Denied(_)))
+        ) {
+            return result;
+        }
 
         let normalized = normalize_exec_result(&result);
         let borrowed = normalized.event_output();
@@ -1046,6 +1112,39 @@ impl Session {
         }
     }
 
+    pub async fn list_resources(
+        &self,
+        server: &str,
+        params: Option<ListResourcesRequestParams>,
+    ) -> anyhow::Result<ListResourcesResult> {
+        self.services
+            .mcp_connection_manager
+            .list_resources(server, params)
+            .await
+    }
+
+    pub async fn list_resource_templates(
+        &self,
+        server: &str,
+        params: Option<ListResourceTemplatesRequestParams>,
+    ) -> anyhow::Result<ListResourceTemplatesResult> {
+        self.services
+            .mcp_connection_manager
+            .list_resource_templates(server, params)
+            .await
+    }
+
+    pub async fn read_resource(
+        &self,
+        server: &str,
+        params: ReadResourceRequestParams,
+    ) -> anyhow::Result<ReadResourceResult> {
+        self.services
+            .mcp_connection_manager
+            .read_resource(server, params)
+            .await
+    }
+
     pub async fn call_tool(
         &self,
         server: &str,
@@ -1106,19 +1205,6 @@ impl Session {
         self.abort_all_tasks(TurnAbortReason::Interrupted).await;
     }
 
-    fn interrupt_task_sync(&self) {
-        if let Ok(mut active) = self.active_turn.try_lock()
-            && let Some(at) = active.as_mut()
-        {
-            at.try_clear_pending_sync();
-            let tasks = at.drain_tasks();
-            *active = None;
-            for (_sub_id, task) in tasks {
-                task.handle.abort();
-            }
-        }
-    }
-
     pub(crate) fn notifier(&self) -> &UserNotifier {
         &self.services.notifier
     }
@@ -1129,12 +1215,6 @@ impl Session {
 
     fn show_raw_agent_reasoning(&self) -> bool {
         self.services.show_raw_agent_reasoning
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        self.interrupt_task_sync();
     }
 }
 
@@ -1209,14 +1289,12 @@ async fn submission_loop(
                     .unwrap_or(prev.sandbox_policy.clone());
                 let new_cwd = cwd.clone().unwrap_or_else(|| prev.cwd.clone());
 
+                let delegate_enabled =
+                    config.include_delegate_tool && sess.delegate_adapter().is_some();
                 let tools_config = ToolsConfig::new(&ToolsConfigParams {
                     model_family: &effective_family,
-                    include_plan_tool: config.include_plan_tool,
-                    include_apply_patch_tool: config.include_apply_patch_tool,
-                    include_web_search_request: config.tools_web_search_request,
-                    use_streamable_shell_tool: config.use_experimental_streamable_shell_tool,
-                    include_view_image_tool: config.include_view_image_tool,
-                    experimental_unified_exec_tool: config.use_experimental_unified_exec_tool,
+                    features: &config.features,
+                    include_delegate_tool: delegate_enabled,
                 });
 
                 let new_turn_context = TurnContext {
@@ -1309,18 +1387,14 @@ async fn submission_loop(
                         sess.conversation_id,
                     );
 
+                    let delegate_enabled =
+                        config.include_delegate_tool && sess.delegate_adapter().is_some();
                     let fresh_turn_context = TurnContext {
                         client,
                         tools_config: ToolsConfig::new(&ToolsConfigParams {
                             model_family: &model_family,
-                            include_plan_tool: config.include_plan_tool,
-                            include_apply_patch_tool: config.include_apply_patch_tool,
-                            include_web_search_request: config.tools_web_search_request,
-                            use_streamable_shell_tool: config
-                                .use_experimental_streamable_shell_tool,
-                            include_view_image_tool: config.include_view_image_tool,
-                            experimental_unified_exec_tool: config
-                                .use_experimental_unified_exec_tool,
+                            features: &config.features,
+                            include_delegate_tool: delegate_enabled,
                         }),
                         user_instructions: turn_context.user_instructions.clone(),
                         base_instructions: turn_context.base_instructions.clone(),
@@ -1420,10 +1494,25 @@ async fn submission_loop(
 
                 // This is a cheap lookup from the connection manager's cache.
                 let tools = sess.services.mcp_connection_manager.list_all_tools();
+                let (auth_statuses, resources, resource_templates) = tokio::join!(
+                    compute_auth_statuses(
+                        config.mcp_servers.iter(),
+                        config.mcp_oauth_credentials_store_mode,
+                    ),
+                    sess.services.mcp_connection_manager.list_all_resources(),
+                    sess.services
+                        .mcp_connection_manager
+                        .list_all_resource_templates()
+                );
                 let event = Event {
                     id: sub_id,
                     msg: EventMsg::McpListToolsResponse(
-                        crate::protocol::McpListToolsResponseEvent { tools },
+                        crate::protocol::McpListToolsResponseEvent {
+                            tools,
+                            resources,
+                            resource_templates,
+                            auth_statuses,
+                        },
                     ),
                 };
                 sess.send_event(event).await;
@@ -1544,14 +1633,16 @@ async fn spawn_review_thread(
     let model = config.review_model.clone();
     let review_model_family = find_family_for_model(&model)
         .unwrap_or_else(|| parent_turn_context.client.get_model_family());
+    // For reviews, disable plan, web_search, view_image regardless of global settings.
+    let mut review_features = config.features.clone();
+    review_features.disable(crate::features::Feature::PlanTool);
+    review_features.disable(crate::features::Feature::WebSearchRequest);
+    review_features.disable(crate::features::Feature::ViewImageTool);
+    review_features.disable(crate::features::Feature::StreamableShell);
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_family: &review_model_family,
-        include_plan_tool: false,
-        include_apply_patch_tool: config.include_apply_patch_tool,
-        include_web_search_request: false,
-        use_streamable_shell_tool: false,
-        include_view_image_tool: false,
-        experimental_unified_exec_tool: config.use_experimental_unified_exec_tool,
+        features: &review_features,
+        include_delegate_tool: false,
     });
 
     let base_instructions = REVIEW_PROMPT.to_string();
@@ -1642,6 +1733,8 @@ pub(crate) async fn run_task(
     turn_context: Arc<TurnContext>,
     sub_id: String,
     input: Vec<InputItem>,
+    task_kind: TaskKind,
+    cancellation_token: CancellationToken,
 ) -> Option<String> {
     if input.is_empty() {
         return None;
@@ -1725,6 +1818,8 @@ pub(crate) async fn run_task(
             Arc::clone(&turn_diff_tracker),
             sub_id.clone(),
             turn_input,
+            task_kind,
+            cancellation_token.child_token(),
         )
         .await
         {
@@ -1877,6 +1972,7 @@ pub(crate) async fn run_task(
                     );
                     sess.notifier()
                         .notify(&UserNotification::AgentTurnComplete {
+                            thread_id: sess.conversation_id.to_string(),
                             turn_id: sub_id.clone(),
                             input_messages: turn_input_messages,
                             last_assistant_message: last_agent_message.clone(),
@@ -1884,6 +1980,10 @@ pub(crate) async fn run_task(
                     break;
                 }
                 continue;
+            }
+            Err(CodexErr::TurnAborted) => {
+                // Aborted turn is reported via a different event.
+                break;
             }
             Err(e) => {
                 info!("Turn error: {e:#}");
@@ -1950,6 +2050,8 @@ async fn run_turn(
     turn_diff_tracker: SharedTurnDiffTracker,
     sub_id: String,
     input: Vec<ResponseItem>,
+    task_kind: TaskKind,
+    cancellation_token: CancellationToken,
 ) -> CodexResult<TurnRunResult> {
     let mcp_tools = sess.services.mcp_connection_manager.list_all_tools();
     let router = Arc::new(ToolRouter::from_config(
@@ -1979,10 +2081,13 @@ async fn run_turn(
             Arc::clone(&turn_diff_tracker),
             &sub_id,
             &prompt,
+            task_kind,
+            cancellation_token.child_token(),
         )
         .await
         {
             Ok(output) => return Ok(output),
+            Err(CodexErr::TurnAborted) => return Err(CodexErr::TurnAborted),
             Err(CodexErr::Interrupted) => return Err(CodexErr::Interrupted),
             Err(CodexErr::EnvVar(var)) => return Err(CodexErr::EnvVar(var)),
             Err(e @ CodexErr::Fatal(_)) => return Err(e),
@@ -2016,9 +2121,7 @@ async fn run_turn(
                     // at a seemingly frozen screen.
                     sess.notify_stream_error(
                         &sub_id,
-                        format!(
-                            "stream error: {e}; retrying {retries}/{max_retries} in {delay:?}…"
-                        ),
+                        format!("Re-connecting... {retries}/{max_retries}"),
                     )
                     .await;
 
@@ -2047,6 +2150,7 @@ struct TurnRunResult {
     total_token_usage: Option<TokenUsage>,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn try_run_turn(
     router: Arc<ToolRouter>,
     sess: Arc<Session>,
@@ -2054,6 +2158,8 @@ async fn try_run_turn(
     turn_diff_tracker: SharedTurnDiffTracker,
     sub_id: &str,
     prompt: &Prompt,
+    task_kind: TaskKind,
+    cancellation_token: CancellationToken,
 ) -> CodexResult<TurnRunResult> {
     // call_ids that are part of this response.
     let completed_call_ids = prompt
@@ -2119,7 +2225,12 @@ async fn try_run_turn(
         summary: turn_context.client.get_reasoning_summary(),
     });
     sess.persist_rollout_items(&[rollout_item]).await;
-    let mut stream = turn_context.client.clone().stream(&prompt).await?;
+    let mut stream = turn_context
+        .client
+        .clone()
+        .stream_with_task_kind(prompt.as_ref(), task_kind)
+        .or_cancel(&cancellation_token)
+        .await??;
 
     let tool_runtime = ToolCallRuntime::new(
         Arc::clone(&router),
@@ -2135,7 +2246,8 @@ async fn try_run_turn(
         // Poll the next item from the model stream. We must inspect *both* Ok and Err
         // cases so that transient stream failures (e.g., dropped SSE connection before
         // `response.completed`) bubble up and trigger the caller's retry logic.
-        let event = stream.next().await;
+        let event = stream.next().or_cancel(&cancellation_token).await?;
+
         let event = match event {
             Some(res) => res?,
             None => {
@@ -2200,7 +2312,8 @@ async fn try_run_turn(
                             response: Some(response),
                         });
                     }
-                    Err(FunctionCallError::RespondToModel(message)) => {
+                    Err(FunctionCallError::RespondToModel(message))
+                    | Err(FunctionCallError::Denied(message)) => {
                         let response = ResponseInputItem::FunctionCallOutput {
                             call_id: String::new(),
                             output: FunctionCallOutputPayload {
@@ -2239,7 +2352,10 @@ async fn try_run_turn(
                 sess.update_token_usage_info(sub_id, turn_context.as_ref(), token_usage.as_ref())
                     .await;
 
-                let processed_items: Vec<ProcessedResponseItem> = output.try_collect().await?;
+                let processed_items = output
+                    .try_collect()
+                    .or_cancel(&cancellation_token)
+                    .await??;
 
                 let unified_diff = {
                     let mut tracker = turn_diff_tracker.lock().await;
@@ -2477,6 +2593,8 @@ mod tests {
     use codex_app_server_protocol::AuthMode;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ResponseItem;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     use mcp_types::ContentBlock;
     use mcp_types::TextContent;
@@ -2486,8 +2604,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration as StdDuration;
-    use tokio::time::Duration;
-    use tokio::time::sleep;
 
     #[test]
     fn reconstruct_history_matches_live_compactions() {
@@ -2729,6 +2845,7 @@ mod tests {
             config.model.as_str(),
             config.model_family.slug.as_str(),
             None,
+            Some("test@test.com".to_string()),
             Some(AuthMode::ChatGPT),
             false,
             "test".to_string(),
@@ -2758,12 +2875,8 @@ mod tests {
         );
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &config.model_family,
-            include_plan_tool: config.include_plan_tool,
-            include_apply_patch_tool: config.include_apply_patch_tool,
-            include_web_search_request: config.tools_web_search_request,
-            use_streamable_shell_tool: config.use_experimental_streamable_shell_tool,
-            include_view_image_tool: config.include_view_image_tool,
-            experimental_unified_exec_tool: config.use_experimental_unified_exec_tool,
+            features: &config.features,
+            include_delegate_tool: config.include_delegate_tool,
         });
         let turn_context = TurnContext {
             client,
@@ -2790,6 +2903,7 @@ mod tests {
                 turn_context.cwd.clone(),
                 None,
             )),
+            delegate_adapter: None,
         };
         let session = Session {
             conversation_id,
@@ -2831,12 +2945,8 @@ mod tests {
         );
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_family: &config.model_family,
-            include_plan_tool: config.include_plan_tool,
-            include_apply_patch_tool: config.include_apply_patch_tool,
-            include_web_search_request: config.tools_web_search_request,
-            use_streamable_shell_tool: config.use_experimental_streamable_shell_tool,
-            include_view_image_tool: config.include_view_image_tool,
-            experimental_unified_exec_tool: config.use_experimental_unified_exec_tool,
+            features: &config.features,
+            include_delegate_tool: config.include_delegate_tool,
         });
         let turn_context = Arc::new(TurnContext {
             client,
@@ -2863,6 +2973,7 @@ mod tests {
                 config.cwd.clone(),
                 None,
             )),
+            delegate_adapter: None,
         };
         let session = Arc::new(Session {
             conversation_id,
@@ -2876,12 +2987,15 @@ mod tests {
     }
 
     #[derive(Clone, Copy)]
-    struct NeverEndingTask(TaskKind);
+    struct NeverEndingTask {
+        kind: TaskKind,
+        listen_to_cancellation_token: bool,
+    }
 
     #[async_trait::async_trait]
     impl SessionTask for NeverEndingTask {
         fn kind(&self) -> TaskKind {
-            self.0
+            self.kind
         }
 
         async fn run(
@@ -2890,20 +3004,26 @@ mod tests {
             _ctx: Arc<TurnContext>,
             _sub_id: String,
             _input: Vec<InputItem>,
+            cancellation_token: CancellationToken,
         ) -> Option<String> {
+            if self.listen_to_cancellation_token {
+                cancellation_token.cancelled().await;
+                return None;
+            }
             loop {
                 sleep(Duration::from_secs(60)).await;
             }
         }
 
         async fn abort(&self, session: Arc<SessionTaskContext>, sub_id: &str) {
-            if let TaskKind::Review = self.0 {
+            if let TaskKind::Review = self.kind {
                 exit_review_mode(session.clone_session(), sub_id.to_string(), None).await;
             }
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[test_log::test]
     async fn abort_regular_task_emits_turn_aborted_only() {
         let (sess, tc, rx) = make_session_and_context_with_rx();
         let sub_id = "sub-regular".to_string();
@@ -2914,7 +3034,41 @@ mod tests {
             Arc::clone(&tc),
             sub_id.clone(),
             input,
-            NeverEndingTask(TaskKind::Regular),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: false,
+            },
+        )
+        .await;
+
+        sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
+
+        let evt = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for event")
+            .expect("event");
+        match evt.msg {
+            EventMsg::TurnAborted(e) => assert_eq!(TurnAbortReason::Interrupted, e.reason),
+            other => panic!("unexpected event: {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn abort_gracefuly_emits_turn_aborted_only() {
+        let (sess, tc, rx) = make_session_and_context_with_rx();
+        let sub_id = "sub-regular".to_string();
+        let input = vec![InputItem::Text {
+            text: "hello".to_string(),
+        }];
+        sess.spawn_task(
+            Arc::clone(&tc),
+            sub_id.clone(),
+            input,
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
         )
         .await;
 
@@ -2928,7 +3082,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn abort_review_task_emits_exited_then_aborted_and_records_history() {
         let (sess, tc, rx) = make_session_and_context_with_rx();
         let sub_id = "sub-review".to_string();
@@ -2939,18 +3093,27 @@ mod tests {
             Arc::clone(&tc),
             sub_id.clone(),
             input,
-            NeverEndingTask(TaskKind::Review),
+            NeverEndingTask {
+                kind: TaskKind::Review,
+                listen_to_cancellation_token: false,
+            },
         )
         .await;
 
         sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
 
-        let first = rx.recv().await.expect("first event");
+        let first = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for first event")
+            .expect("first event");
         match first.msg {
             EventMsg::ExitedReviewMode(ev) => assert!(ev.review_output.is_none()),
             other => panic!("unexpected first event: {other:?}"),
         }
-        let second = rx.recv().await.expect("second event");
+        let second = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for second event")
+            .expect("second event");
         match second.msg {
             EventMsg::TurnAborted(e) => assert_eq!(TurnAbortReason::Interrupted, e.reason),
             other => panic!("unexpected second event: {other:?}"),

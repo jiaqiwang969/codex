@@ -1849,6 +1849,88 @@ impl StaticOverlay {
     }
 }
 
+impl SessionPickerOverlay {
+    pub(crate) fn from_state(state: crate::cxresume_picker_widget::PickerState) -> Self {
+        let selected_session = state.selected_session().cloned();
+        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
+        Self {
+            picker_state: state,
+            is_done: false,
+            selected_session_id,
+            selected_session,
+        }
+    }
+
+    pub(crate) fn refresh_sessions(&mut self) -> std::result::Result<(), String> {
+        let sessions = crate::cxresume_picker_widget::get_cwd_sessions()?;
+        self.picker_state.reload_sessions(sessions);
+        self.is_done = false;
+        self.selected_session_id = None;
+        self.selected_session = None;
+        Ok(())
+    }
+
+    pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+        match event {
+            TuiEvent::Key(key_event) => {
+                // Convert KeyCode to PickerEvent using the static method
+                if let Some(picker_event) = self.picker_state.key_to_event(key_event.code) {
+                    // Handle the picker event and get optional session ID
+                    if let Some(session_id) = self.picker_state.handle_event(picker_event) {
+                        if session_id.is_empty() {
+                            // Empty string signals exit
+                            self.selected_session_id = None;
+                            self.selected_session = None;
+                            self.is_done = true;
+                        } else if session_id == crate::cxresume_picker_widget::NEW_SESSION_SENTINEL
+                        {
+                            self.selected_session_id = Some(session_id);
+                            self.selected_session = None;
+                            self.is_done = true;
+                        } else {
+                            self.selected_session_id = Some(session_id);
+                            self.selected_session = self.picker_state.selected_session().cloned();
+                            self.is_done = true;
+                        }
+                    }
+                    // Schedule a frame update to reflect state changes
+                    tui.frame_requester().schedule_frame();
+                }
+                Ok(())
+            }
+            TuiEvent::Draw => {
+                // Render the picker view
+                tui.draw(u16::MAX, |frame| {
+                    crate::cxresume_picker_widget::render_picker_view(frame, &self.picker_state);
+                })?;
+                if self.picker_state.advance_animation() {
+                    tui.frame_requester().schedule_frame();
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub(crate) fn is_done(&self) -> bool {
+        self.is_done
+    }
+
+    pub(crate) fn selected_session_info(&self) -> Option<SessionInfo> {
+        self.selected_session.clone()
+    }
+
+    pub(crate) fn replace_state(&mut self, mut state: crate::cxresume_picker_widget::PickerState) {
+        state.inherit_animation(&self.picker_state);
+        let selected_session = state.selected_session().cloned();
+        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
+        self.picker_state = state;
+        self.selected_session_id = selected_session_id;
+        self.selected_session = selected_session;
+        self.is_done = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2132,87 +2214,5 @@ mod tests {
             w2.len() >= len1,
             "wrapped length should grow or stay same after append"
         );
-    }
-}
-
-impl SessionPickerOverlay {
-    pub(crate) fn from_state(state: crate::cxresume_picker_widget::PickerState) -> Self {
-        let selected_session = state.selected_session().cloned();
-        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
-        Self {
-            picker_state: state,
-            is_done: false,
-            selected_session_id,
-            selected_session,
-        }
-    }
-
-    pub(crate) fn refresh_sessions(&mut self) -> std::result::Result<(), String> {
-        let sessions = crate::cxresume_picker_widget::get_cwd_sessions()?;
-        self.picker_state.reload_sessions(sessions);
-        self.is_done = false;
-        self.selected_session_id = None;
-        self.selected_session = None;
-        Ok(())
-    }
-
-    pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
-        match event {
-            TuiEvent::Key(key_event) => {
-                // Convert KeyCode to PickerEvent using the static method
-                if let Some(picker_event) = self.picker_state.key_to_event(key_event.code) {
-                    // Handle the picker event and get optional session ID
-                    if let Some(session_id) = self.picker_state.handle_event(picker_event) {
-                        if session_id.is_empty() {
-                            // Empty string signals exit
-                            self.selected_session_id = None;
-                            self.selected_session = None;
-                            self.is_done = true;
-                        } else if session_id == crate::cxresume_picker_widget::NEW_SESSION_SENTINEL
-                        {
-                            self.selected_session_id = Some(session_id);
-                            self.selected_session = None;
-                            self.is_done = true;
-                        } else {
-                            self.selected_session_id = Some(session_id);
-                            self.selected_session = self.picker_state.selected_session().cloned();
-                            self.is_done = true;
-                        }
-                    }
-                    // Schedule a frame update to reflect state changes
-                    tui.frame_requester().schedule_frame();
-                }
-                Ok(())
-            }
-            TuiEvent::Draw => {
-                // Render the picker view
-                tui.draw(u16::MAX, |frame| {
-                    crate::cxresume_picker_widget::render_picker_view(frame, &self.picker_state);
-                })?;
-                if self.picker_state.advance_animation() {
-                    tui.frame_requester().schedule_frame();
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-
-    pub(crate) fn is_done(&self) -> bool {
-        self.is_done
-    }
-
-    pub(crate) fn selected_session_info(&self) -> Option<SessionInfo> {
-        self.selected_session.clone()
-    }
-
-    pub(crate) fn replace_state(&mut self, mut state: crate::cxresume_picker_widget::PickerState) {
-        state.inherit_animation(&self.picker_state);
-        let selected_session = state.selected_session().cloned();
-        let selected_session_id = selected_session.as_ref().map(|s| s.id.clone());
-        self.picker_state = state;
-        self.selected_session_id = selected_session_id;
-        self.selected_session = selected_session;
-        self.is_done = false;
     }
 }
